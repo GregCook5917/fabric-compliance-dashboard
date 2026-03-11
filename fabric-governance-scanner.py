@@ -179,74 +179,37 @@ print("✅ Cell 3 — imports and helpers ready.")
 # CELL 4 — Fetch Git status for all items in Dev workspace
 # -----------------------------------------------------------------------------
 
-def get_dev_git_status() -> pd.DataFrame:
-    print("🔍 [Dev] Fetching Git status...")
+raw       = fabric_get(f"workspaces/{CONFIG['dev_workspace_id']}/git/status")
+scan_time = now_utc()
 
-    raw       = fabric_get(f"workspaces/{CONFIG['dev_workspace_id']}/git/status")
-    scan_time = now_utc()
-    rows      = []
+ws_head = raw.get("workspaceHead", {}) or {}
+print("ws_head type:", type(ws_head), "value:", ws_head)
 
-    # Top-level workspace head — contains last sync metadata
-    ws_head = raw.get("workspaceHead", {}) or {}
+for i, change in enumerate(raw.get("changes", [])):
+    print(f"\n--- change {i} ---")
+    
+    try:
+        meta = change.get("itemMetadata", {}) or {}
+        print("meta:", meta)
+    except Exception as e:
+        print(f"FAILED at meta: {e}, change type={type(change)}, value={change}")
+        break
 
-    for change in raw.get("changes", []):
-
-        # Item identity lives under itemMetadata
-        meta       = change.get("itemMetadata", {}) or {}
+    try:
         identifier = meta.get("itemIdentifier", {}) or {}
+        print("identifier:", identifier)
+    except Exception as e:
+        print(f"FAILED at identifier: {e}")
+        break
 
-        # workspaceChange is a plain string: 'Added', 'Modified', 'Deleted'
-        # remoteChange is a plain string or None
-        ws_change     = change.get("workspaceChange")   # e.g. 'Added', 'Modified'
-        remote_change = change.get("remoteChange")       # None if no remote change
+    try:
+        ws_change     = change.get("workspaceChange")
+        remote_change = change.get("remoteChange")
         conflict_type = change.get("conflictType", "None")
-
-        # Derive git sync state from the combination of flags
-        # Logic:
-        #   remoteChange is None + workspaceChange is set  → Uncommitted (local only)
-        #   remoteChange is set  + workspaceChange is None → NotInWorkspace (remote only)
-        #   both set                                       → Conflict
-        #   neither set                                    → Committed (shouldn't appear in changes list)
-        if conflict_type and conflict_type != "None":
-            git_sync_state = "Conflict"
-        elif ws_change and not remote_change:
-            git_sync_state = "Uncommitted"
-        elif remote_change and not ws_change:
-            git_sync_state = "NotInWorkspace"
-        elif ws_change and remote_change:
-            git_sync_state = "Conflict"
-        else:
-            git_sync_state = "Committed"
-
-        is_uncommitted = git_sync_state == "Uncommitted"
-
-        rows.append({
-            "scan_timestamp":    scan_time,
-            "item_id":           identifier.get("objectId"),
-            "item_display_name": meta.get("displayName"),
-            "item_type":         meta.get("itemType"),
-            "git_sync_state":    git_sync_state,
-            "workspace_change":  ws_change,       # raw value for debugging
-            "remote_change":     remote_change,   # raw value for debugging
-            "conflict_type":     conflict_type,
-            "workspace_version": ws_head.get("commitHash"),
-            "remote_version":    raw.get("remoteCommitHash"),
-            "last_modified_by":  None,            # not available per-item in this API version
-            "last_modified_at":  None,            # not available per-item in this API version
-            "is_uncommitted":    is_uncommitted,
-            "workspace_id":      CONFIG["dev_workspace_id"],
-            "_name_key":         name_key(meta.get("displayName")),
-        })
-
-    df = pd.DataFrame(rows)
-    uncommitted = int(df["is_uncommitted"].sum()) if not df.empty else 0
-    print(f"   {len(df)} items found — {uncommitted} uncommitted.")
-    return df
-
-
-df_git_status = get_dev_git_status()
-display(df_git_status[["item_display_name", "item_type", "git_sync_state",
-                        "workspace_change", "remote_change"]])
+        print("ws_change:", ws_change, "| remote_change:", remote_change, "| conflict_type:", conflict_type)
+    except Exception as e:
+        print(f"FAILED at change fields: {e}")
+        break
 
 # -----------------------------------------------------------------------------
 # CELL 5 — Fetch item lists from Test and Prod workspaces
