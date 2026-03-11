@@ -53,9 +53,6 @@ CONFIG = {
     # Fabric
     # -------------------------------------------------------------------------
 
-    # PAT: app.fabric.microsoft.com → profile (top right) → Developer settings
-    "fabric_pat": "YOUR_FABRIC_PAT_HERE",
-
     # Workspace IDs — found in the URL when viewing each workspace:
     # app.fabric.microsoft.com/groups/{WORKSPACE_ID}/...
     "dev_workspace_id":  "YOUR_DEV_WORKSPACE_ID",
@@ -123,10 +120,16 @@ warnings.filterwarnings("ignore")
 
 
 def fabric_headers() -> dict:
-    """Bearer-style auth headers for Fabric REST API using PAT."""
-    token = b64encode(f":{CONFIG['fabric_pat']}".encode()).decode()
-    return {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
-
+    """
+    Bearer token auth for Fabric REST API using mssparkutils.
+    This is the correct approach when PAT creation is disabled at tenant level.
+    The token is scoped to the current user's identity running the notebook.
+    """
+    token = mssparkutils.credentials.getToken("pbi")
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type":  "application/json",
+    }
 
 def ado_headers() -> dict:
     """Bearer-style auth headers for ADO REST API using PAT."""
