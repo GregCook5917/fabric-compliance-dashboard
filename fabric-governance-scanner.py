@@ -294,36 +294,20 @@ def get_downstream_workspace_items(workspace_id: str,
 
     for item in all_items:
         rows.append({
-            "workspace_id":        workspace_id,
-            "stage":               stage_label,
-            "item_id":             item.get("id"),
-            "item_display_name":   item.get("displayName"),
-            "item_type":           item.get("type"),
-            "item_modified_at":    parse_dt(item.get("modifiedDateTime")),
-            "item_modified_by":    item.get("modifiedBy", {})
-                                       .get("user", {})
-                                       .get("userPrincipalName"),
-            "scan_timestamp":      scan_time,
-            "_name_key":           name_key(item.get("displayName")),
+            "workspace_id":       workspace_id,
+            "stage":              stage_label,
+            "item_id":            item.get("id"),
+            "item_display_name":  item.get("displayName"),
+            "item_type":          item.get("type"),
+            "item_modified_at":   None,   # not returned by this API version
+            "item_modified_by":   None,   # not returned by this API version
+            "scan_timestamp":     scan_time,
+            "_name_key":          name_key(item.get("displayName")),
         })
 
     df = pd.DataFrame(rows)
     print(f"   {len(df)} items found in {stage_label}.")
     return df
-
-
-df_test_items = get_downstream_workspace_items(
-    CONFIG["test_workspace_id"], "Test"
-)
-df_prod_items = get_downstream_workspace_items(
-    CONFIG["prod_workspace_id"], "Prod"
-)
-
-# Combined downstream item snapshot for v4 detection
-df_downstream_items = pd.concat([df_test_items, df_prod_items], ignore_index=True)
-
-display(df_downstream_items[["stage", "item_display_name", "item_type",
-                              "item_modified_at", "item_modified_by"]].head(20))
 
 
 # -----------------------------------------------------------------------------
@@ -537,52 +521,40 @@ def detect_violations(df_git:        pd.DataFrame,
             "promoted_by", "promoted_from_stage", "operation_id"])
 
     # ── 2. v4 — Detect direct edits in Test and Prod ────────────────────────
-    # For each item in Test/Prod, check if its modified_at is newer than
-    # the last successful deployment TO that stage.
-    # If yes → someone edited it directly, bypassing Dev entirely.
+# Since modifiedDateTime is not available from the Items API, we use
+# deployment history as the source of truth.
+# Rule: item exists in Test/Prod but has no successful deployment record
+# to that stage within the lookback window → unverified origin.
 
-    v4_rows = []
+v4_rows = []
 
-    if not df_downstream.empty and not last_promo_by_stage.empty:
-        df_ds = df_downstream.merge(
-            last_promo_by_stage,
-            left_on  =["_name_key", "stage"],
-            right_on =["_name_key", "target_stage"],
-            how="left"
-        )
+if not df_downstream.empty:
+    for _, row in df_downstream.iterrows():
+        stage    = row["stage"]
+        name_k   = row["_name_key"]
 
-        for _, row in df_ds.iterrows():
-            item_mod  = row.get("item_modified_at")
-            last_dep  = row.get("completed_at")       # last deploy to this stage
-            stage     = row.get("stage")
-            modifier  = row.get("item_modified_by")
+        # Check if this item has a deployment record to this stage
+        has_deployment = False
+        if not last_promo_by_stage.empty:
+            match = (
+                (last_promo_by_stage["_name_key"]    == name_k) &
+                (last_promo_by_stage["target_stage"] == stage)
+            )
+            has_deployment = match.any()
 
-            # Direct edit conditions:
-            # (a) item exists in downstream AND was never deployed there  OR
-            # (b) item's modified_at is newer than the last deployment to that stage
-            # Guard: ignore if modifier matches the deployment triggerer
-            #        (Fabric itself touches items during deployment)
-            is_direct_edit = False
-            if item_mod is not None:
-                if last_dep is None:
-                    # Item exists but no deployment record — could be manually created
-                    is_direct_edit = True
-                elif item_mod > last_dep:
-                    is_direct_edit = True
-
-            if is_direct_edit:
-                severity = "CRITICAL" if stage == "Prod" else "MEDIUM"
-                v4_rows.append({
-                    "item_display_name":       row["item_display_name"],
-                    "item_type":               row["item_type"],
-                    "affected_stage":          stage,
-                    "item_modified_at":        item_mod,
-                    "item_modified_by":        modifier,
-                    "last_deployed_to_stage":  last_dep,
-                    "v4_direct_edit":          True,
-                    "v4_severity":             severity,
-                    "_name_key":               row["_name_key"],
-                })
+        if not has_deployment:
+            severity = "CRITICAL" if stage == "Prod" else "MEDIUM"
+            v4_rows.append({
+                "item_display_name":      row["item_display_name"],
+                "item_type":              row["item_type"],
+                "affected_stage":         stage,
+                "item_modified_at":       None,
+                "item_modified_by":       None,
+                "last_deployed_to_stage": None,
+                "v4_direct_edit":         True,
+                "v4_severity":            severity,
+                "_name_key":              name_k,
+            })
 
     df_v4 = pd.DataFrame(v4_rows) if v4_rows else pd.DataFrame(
         columns=["item_display_name", "item_type", "affected_stage",
