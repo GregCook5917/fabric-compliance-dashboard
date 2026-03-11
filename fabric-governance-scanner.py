@@ -177,39 +177,89 @@ print("✅ Cell 3 — imports and helpers ready.")
 
 # -----------------------------------------------------------------------------
 # CELL 4 — Fetch Git status for all items in Dev workspace
+#
+# API: GET /workspaces/{devWorkspaceId}/git/status
+#
+# Fabric response structure (confirmed from diagnostic):
+#   raw["workspaceHead"]    — commit hash string (current workspace state)
+#   raw["remoteCommitHash"] — commit hash string (current remote/ADO state)
+#   raw["changes"]          — list of items that differ from remote
+#
+# Each change object:
+#   change["itemMetadata"]["itemIdentifier"]["objectId"] — item ID
+#   change["itemMetadata"]["displayName"]                — item name
+#   change["itemMetadata"]["itemType"]                   — e.g. SynapseNotebook
+#   change["workspaceChange"]  — string or None: 'Added', 'Modified', 'Deleted'
+#   change["remoteChange"]     — string or None: 'Added', 'Modified', 'Deleted'
+#   change["conflictType"]     — string: 'None' or actual conflict type
+#
+# git_sync_state derivation:
+#   workspaceChange set, remoteChange None → Uncommitted (local change not in repo)
+#   remoteChange set, workspaceChange None → NotInWorkspace (in repo, not in workspace)
+#   both set OR conflictType != 'None'     → Conflict
+#   neither set                            → Committed (won't appear in changes list)
+#
+# Note: last_modified_by and last_modified_at are not returned by this API
+# version on a per-item basis. These fields are set to None here and will
+# be populated from the ADO commit history in Cell 7 where available.
 # -----------------------------------------------------------------------------
 
-raw       = fabric_get(f"workspaces/{CONFIG['dev_workspace_id']}/git/status")
-scan_time = now_utc()
+def get_dev_git_status() -> pd.DataFrame:
+    print("🔍 [Dev] Fetching Git status...")
 
-ws_head = raw.get("workspaceHead", {}) or {}
-print("ws_head type:", type(ws_head), "value:", ws_head)
+    raw                   = fabric_get(f"workspaces/{CONFIG['dev_workspace_id']}/git/status")
+    scan_time             = now_utc()
+    workspace_commit_hash = raw.get("workspaceHead")    # plain commit hash string
+    remote_commit_hash    = raw.get("remoteCommitHash") # plain commit hash string
+    rows                  = []
 
-for i, change in enumerate(raw.get("changes", [])):
-    print(f"\n--- change {i} ---")
-    
-    try:
-        meta = change.get("itemMetadata", {}) or {}
-        print("meta:", meta)
-    except Exception as e:
-        print(f"FAILED at meta: {e}, change type={type(change)}, value={change}")
-        break
+    for change in raw.get("changes", []):
 
-    try:
-        identifier = meta.get("itemIdentifier", {}) or {}
-        print("identifier:", identifier)
-    except Exception as e:
-        print(f"FAILED at identifier: {e}")
-        break
-
-    try:
-        ws_change     = change.get("workspaceChange")
-        remote_change = change.get("remoteChange")
+        meta          = change.get("itemMetadata", {}) or {}
+        identifier    = meta.get("itemIdentifier", {}) or {}
+        ws_change     = change.get("workspaceChange")   # 'Added', 'Modified', 'Deleted', or None
+        remote_change = change.get("remoteChange")      # 'Added', 'Modified', 'Deleted', or None
         conflict_type = change.get("conflictType", "None")
-        print("ws_change:", ws_change, "| remote_change:", remote_change, "| conflict_type:", conflict_type)
-    except Exception as e:
-        print(f"FAILED at change fields: {e}")
-        break
+
+        # Derive a normalised git sync state from the raw change flags
+        if conflict_type and conflict_type != "None":
+            git_sync_state = "Conflict"
+        elif ws_change and not remote_change:
+            git_sync_state = "Uncommitted"
+        elif remote_change and not ws_change:
+            git_sync_state = "NotInWorkspace"
+        elif ws_change and remote_change:
+            git_sync_state = "Conflict"
+        else:
+            git_sync_state = "Committed"
+
+        rows.append({
+            "scan_timestamp":    scan_time,
+            "item_id":           identifier.get("objectId"),
+            "item_display_name": meta.get("displayName"),
+            "item_type":         meta.get("itemType"),
+            "git_sync_state":    git_sync_state,
+            "workspace_change":  ws_change,
+            "remote_change":     remote_change,
+            "conflict_type":     conflict_type,
+            "workspace_version": workspace_commit_hash,
+            "remote_version":    remote_commit_hash,
+            "last_modified_by":  None,   # not available per-item in this API version
+            "last_modified_at":  None,   # not available per-item in this API version
+            "is_uncommitted":    git_sync_state == "Uncommitted",
+            "workspace_id":      CONFIG["dev_workspace_id"],
+            "_name_key":         name_key(meta.get("displayName")),
+        })
+
+    df = pd.DataFrame(rows)
+    uncommitted = int(df["is_uncommitted"].sum()) if not df.empty else 0
+    print(f"   {len(df)} items found — {uncommitted} uncommitted.")
+    return df
+
+
+df_git_status = get_dev_git_status()
+display(df_git_status[["item_display_name", "item_type", "git_sync_state",
+                        "workspace_change", "remote_change"]])
 
 # -----------------------------------------------------------------------------
 # CELL 5 — Fetch item lists from Test and Prod workspaces
