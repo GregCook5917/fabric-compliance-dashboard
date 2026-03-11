@@ -309,6 +309,33 @@ def get_downstream_workspace_items(workspace_id: str,
     print(f"   {len(df)} items found in {stage_label}.")
     return df
 
+    print("df_test_items defined:", "df_test_items" in dir())
+    print("df_prod_items defined:", "df_prod_items" in dir())
+
+    try:
+        df_test_items = get_downstream_workspace_items(
+            CONFIG["test_workspace_id"], "Test"
+        )
+        print("Test items shape:", df_test_items.shape)
+    except Exception as e:
+        print(f"Test fetch FAILED: {e}")
+
+    try:
+        df_prod_items = get_downstream_workspace_items(
+            CONFIG["prod_workspace_id"], "Prod"
+        )
+        print("Prod items shape:", df_prod_items.shape)
+    except Exception as e:
+        print(f"Prod fetch FAILED: {e}")
+
+    try:
+        df_downstream_items = pd.concat(
+            [df_test_items, df_prod_items], ignore_index=True
+        )
+        print("df_downstream_items shape:", df_downstream_items.shape)
+    except Exception as e:
+        print(f"Concat FAILED: {e}")
+
 
 # -----------------------------------------------------------------------------
 # CELL 6 — Fetch deployment pipeline operation history
