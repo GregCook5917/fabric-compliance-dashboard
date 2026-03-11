@@ -17,3 +17,18 @@ print()
 
 for key, val in change.items():
     print(f"  {key}: {type(val).__name__} = {repr(val)[:120]}")
+
+    # DIAGNOSTIC — Cell 5 response structure
+import json
+
+raw_test = fabric_get(f"workspaces/{CONFIG['test_workspace_id']}/items")
+
+print("Top-level keys:", list(raw_test.keys()))
+print()
+
+# Show first item in full
+items = raw_test.get("value", [])
+print(f"Total items: {len(items)}")
+print()
+print("First item structure:")
+print(json.dumps(items[0], indent=2, default=str))
