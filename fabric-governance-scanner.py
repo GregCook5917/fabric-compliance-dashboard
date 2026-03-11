@@ -452,21 +452,24 @@ if not df_ado_commits.empty:
 # -----------------------------------------------------------------------------
 # CELL 8 — Detect violations
 #
-# This cell is the core logic engine. It assembles all data sources and
-# evaluates each item against the full violation rule set.
+# Rules:
+#   v1 — git_sync_state == "Uncommitted" in Dev
+#   v2 — Item appears in deployment history AND is currently uncommitted
+#   v3 — Fabric last_modified_at > last ADO commit_at
+#        (currently NULL from API — skipped until alt source found)
+#   v4 — Item exists in Test or Prod with NO deployment record in lookback
+#        window → unverified origin, likely created or edited directly
+#        MEDIUM if Test, CRITICAL if Prod
 #
-# ┌─────────────────────────────────────────────────────────────────────────┐
-# │  Flag  │ Rule                                                           │
-# ├─────────────────────────────────────────────────────────────────────────┤
-# │  v1    │ git_sync_state == "Uncommitted" in Dev                         │
-# │  v2    │ Item appears in deployment history AND is currently uncommitted│
-# │  v3    │ Fabric last_modified_at > last ADO commit_at                   │
-# │  v4    │ Item modified_at in Test/Prod > last deployment to that stage  │
-# │        │   → MEDIUM if Test, CRITICAL if Prod                           │
-# ├─────────────────────────────────────────────────────────────────────────┤
-# │ pending│ git_sync_state == "Committed" AND last_commit_at >             │
-# │_promo  │ last_promoted_at  (informational — healthy queue, not a fault) │
-# └─────────────────────────────────────────────────────────────────────────┘
+#   pending_promotion — git_sync_state == "Committed" AND last_commit_at >
+#                       last_promoted_at (informational, not a violation)
+#
+# Severity:
+#   CRITICAL — v4 direct edit in Prod
+#   HIGH     — v2 promoted while dirty / multiple flags
+#   MEDIUM   — v4 direct edit in Test / single promotion flag
+#   LOW      — v1 uncommitted in Dev only, not yet promoted
+#   NONE     — clean
 # -----------------------------------------------------------------------------
 
 def detect_violations(df_git:        pd.DataFrame,
@@ -477,14 +480,12 @@ def detect_violations(df_git:        pd.DataFrame,
     print("🔎 Running violation detection...")
     scan_time = now_utc()
 
-    # ── 1. Build last-promotion lookup per item per target stage ────────────
-    # We need to know: "what was the last time item X was successfully
-    # deployed TO stage Y?" — this anchors the v4 direct-edit detection.
+    # ── 1. Build last-promotion lookup ───────────────────────────────────────
 
     if not df_deps.empty:
         successful_deps = df_deps[df_deps["operation_status"] == "Succeeded"].copy()
 
-        # Last promotion of each item to each stage
+        # Last promotion per item per target stage — anchors v4 detection
         last_promo_by_stage = (
             successful_deps
             .sort_values("completed_at", ascending=False)
@@ -495,8 +496,7 @@ def detect_violations(df_git:        pd.DataFrame,
               "triggered_by", "source_stage", "operation_id"]]
         )
 
-        # Also derive a single "most recent promotion regardless of stage"
-        # for the v2 check on the Dev git status rows
+        # Last promotion per item regardless of stage — anchors v2 detection
         last_promo_overall = (
             successful_deps
             .sort_values("completed_at", ascending=False)
@@ -513,70 +513,77 @@ def detect_violations(df_git:        pd.DataFrame,
             })
         )
     else:
-        last_promo_by_stage  = pd.DataFrame(columns=[
+        last_promo_by_stage = pd.DataFrame(columns=[
             "_name_key", "target_stage", "completed_at",
             "triggered_by", "source_stage", "operation_id"])
-        last_promo_overall   = pd.DataFrame(columns=[
+        last_promo_overall = pd.DataFrame(columns=[
             "_name_key", "last_promoted_at", "promoted_to_stage",
             "promoted_by", "promoted_from_stage", "operation_id"])
 
-    # ── 2. v4 — Detect direct edits in Test and Prod ────────────────────────
-# Since modifiedDateTime is not available from the Items API, we use
-# deployment history as the source of truth.
-# Rule: item exists in Test/Prod but has no successful deployment record
-# to that stage within the lookback window → unverified origin.
+    # ── 2. v4 — Detect items in Test/Prod with no deployment record ──────────
+    # Since modifiedDateTime is not returned by the Fabric Items API,
+    # we use deployment history as the source of truth.
+    # An item that exists in Test or Prod but has no successful deployment
+    # record within the lookback window has an unverified origin.
 
-v4_rows = []
+    v4_rows = []
 
-if not df_downstream.empty:
-    for _, row in df_downstream.iterrows():
-        stage    = row["stage"]
-        name_k   = row["_name_key"]
+    if not df_downstream.empty:
+        for _, row in df_downstream.iterrows():
+            stage  = row["stage"]
+            name_k = row["_name_key"]
 
-        # Check if this item has a deployment record to this stage
-        has_deployment = False
-        if not last_promo_by_stage.empty:
-            match = (
-                (last_promo_by_stage["_name_key"]    == name_k) &
-                (last_promo_by_stage["target_stage"] == stage)
-            )
-            has_deployment = match.any()
+            # Check if a deployment record exists for this item to this stage
+            has_deployment = False
+            if not last_promo_by_stage.empty:
+                match = (
+                    (last_promo_by_stage["_name_key"]    == name_k) &
+                    (last_promo_by_stage["target_stage"] == stage)
+                )
+                has_deployment = match.any()
 
-        if not has_deployment:
-            severity = "CRITICAL" if stage == "Prod" else "MEDIUM"
-            v4_rows.append({
-                "item_display_name":      row["item_display_name"],
-                "item_type":              row["item_type"],
-                "affected_stage":         stage,
-                "item_modified_at":       None,
-                "item_modified_by":       None,
-                "last_deployed_to_stage": None,
-                "v4_direct_edit":         True,
-                "v4_severity":            severity,
-                "_name_key":              name_k,
-            })
+            if not has_deployment:
+                severity = "CRITICAL" if stage == "Prod" else "MEDIUM"
+                v4_rows.append({
+                    "item_display_name":      row["item_display_name"],
+                    "item_type":              row["item_type"],
+                    "affected_stage":         stage,
+                    "item_modified_at":       None,
+                    "item_modified_by":       None,
+                    "last_deployed_to_stage": None,
+                    "v4_direct_edit":         True,
+                    "v4_severity":            severity,
+                    "v4_note":                (f"No deployment record in last "
+                                               f"{CONFIG['lookback_days']} days — "
+                                               f"unverified origin in {stage}"),
+                    "_name_key":              name_k,
+                })
 
     df_v4 = pd.DataFrame(v4_rows) if v4_rows else pd.DataFrame(
         columns=["item_display_name", "item_type", "affected_stage",
                  "item_modified_at", "item_modified_by",
                  "last_deployed_to_stage", "v4_direct_edit",
-                 "v4_severity", "_name_key"])
+                 "v4_severity", "v4_note", "_name_key"])
 
-    print(f"   v4 direct edits: {len(df_v4)} "
-          f"({int((df_v4['v4_severity'] == 'CRITICAL').sum()) if not df_v4.empty else 0} CRITICAL in Prod)")
+    critical_count = int((df_v4["v4_severity"] == "CRITICAL").sum()) if not df_v4.empty else 0
+    print(f"   v4 unverified items: {len(df_v4)} "
+          f"({critical_count} CRITICAL in Prod)")
 
-    # ── 3. Build the main violation DataFrame from Dev git status ────────────
+    # ── 3. Build main violation DataFrame from Dev git status ────────────────
+
     df = df_git.copy()
 
-    # Join: last overall promotion
+    # Join last overall promotion onto Dev rows
     df = df.merge(last_promo_overall, on="_name_key", how="left")
 
-    # Join: ADO commit history
+    # Join ADO commit history
     if not df_ado.empty:
         ado_lookup = df_ado.set_index("_name_key")[
-            ["last_commit_at", "last_commit_by", "last_commit_msg", "last_commit_id"]
+            ["last_commit_at", "last_commit_by",
+             "last_commit_msg", "last_commit_id"]
         ]
-        df = df.merge(ado_lookup, left_on="_name_key", right_index=True, how="left")
+        df = df.merge(ado_lookup, left_on="_name_key",
+                      right_index=True, how="left")
     else:
         df["last_commit_at"]  = pd.NaT
         df["last_commit_by"]  = None
@@ -585,47 +592,43 @@ if not df_downstream.empty:
 
     # ── 4. v1, v2, v3 flags ─────────────────────────────────────────────────
 
-    df["v1_uncommitted_in_dev"]   = df["is_uncommitted"]
+    df["v1_uncommitted_in_dev"] = df["is_uncommitted"]
 
     df["v2_promoted_while_dirty"] = (
         df["last_promoted_at"].notna() & df["is_uncommitted"]
     )
 
+    # v3 requires last_modified_at from Dev — currently NULL from API.
+    # Defaulting to False until an alternative data source is identified.
     df["v3_modified_after_commit"] = False
-    mask = df["last_modified_at"].notna() & df["last_commit_at"].notna()
-    df.loc[mask, "v3_modified_after_commit"] = (
-        df.loc[mask, "last_modified_at"] > df.loc[mask, "last_commit_at"]
-    )
 
-    # ── 5. pending_promotion flag (informational — NOT a violation) ──────────
-    # Item is committed in Dev but hasn't been pushed downstream yet.
-    # This is the CORRECT workflow state — the developer committed but
-    # hasn't triggered a deployment yet. Surface as a useful queue view.
+    # ── 5. pending_promotion (informational — not a violation) ───────────────
 
     df["pending_promotion"] = False
     pp_mask = (
         (df["git_sync_state"] == "Committed") &
         df["last_commit_at"].notna() &
         (
-            df["last_promoted_at"].isna() |                          # never promoted
-            (df["last_commit_at"] > df["last_promoted_at"])          # new commit since last deploy
+            df["last_promoted_at"].isna() |
+            (df["last_commit_at"] > df["last_promoted_at"])
         )
     )
     df.loc[pp_mask, "pending_promotion"] = True
 
-    # ── 6. v4 flag on Dev rows — join direct edit findings ──────────────────
-    # v4 violations live in downstream workspaces, not in Dev git status.
-    # We join them back onto the Dev rows so Power BI has one unified table.
-    # Items with a v4 violation but NOT in Dev git status are appended below.
+    # ── 6. Join v4 flags back onto Dev rows ──────────────────────────────────
+    # v4 violations originate in downstream workspaces. We join them back
+    # onto Dev rows by name so Power BI has one unified fact table.
+    # Items in Test/Prod that have no matching Dev row are appended below.
 
-    df["v4_direct_edit_test"]    = False
-    df["v4_direct_edit_prod"]    = False
-    df["v4_test_modified_at"]    = pd.NaT
-    df["v4_prod_modified_at"]    = pd.NaT
-    df["v4_test_modified_by"]    = None
-    df["v4_prod_modified_by"]    = None
-    df["v4_last_deployed_test"]  = pd.NaT
-    df["v4_last_deployed_prod"]  = pd.NaT
+    df["v4_direct_edit_test"]   = False
+    df["v4_direct_edit_prod"]   = False
+    df["v4_test_modified_at"]   = pd.NaT
+    df["v4_prod_modified_at"]   = pd.NaT
+    df["v4_test_modified_by"]   = None
+    df["v4_prod_modified_by"]   = None
+    df["v4_last_deployed_test"] = pd.NaT
+    df["v4_last_deployed_prod"] = pd.NaT
+    df["v4_note"]               = None
 
     if not df_v4.empty:
         for _, v4row in df_v4.iterrows():
@@ -633,39 +636,61 @@ if not df_downstream.empty:
             stage = v4row["affected_stage"]
             match = df["_name_key"] == key
 
-            if stage == "Test":
-                df.loc[match, "v4_direct_edit_test"]   = True
-                df.loc[match, "v4_test_modified_at"]   = v4row["item_modified_at"]
-                df.loc[match, "v4_test_modified_by"]   = v4row["item_modified_by"]
-                df.loc[match, "v4_last_deployed_test"] = v4row["last_deployed_to_stage"]
-            elif stage == "Prod":
-                df.loc[match, "v4_direct_edit_prod"]   = True
-                df.loc[match, "v4_prod_modified_at"]   = v4row["item_modified_at"]
-                df.loc[match, "v4_prod_modified_by"]   = v4row["item_modified_by"]
-                df.loc[match, "v4_last_deployed_prod"] = v4row["last_deployed_to_stage"]
+            if match.any():
+                if stage == "Test":
+                    df.loc[match, "v4_direct_edit_test"]   = True
+                    df.loc[match, "v4_test_modified_at"]   = v4row["item_modified_at"]
+                    df.loc[match, "v4_test_modified_by"]   = v4row["item_modified_by"]
+                    df.loc[match, "v4_last_deployed_test"] = v4row["last_deployed_to_stage"]
+                    df.loc[match, "v4_note"]               = v4row["v4_note"]
+                elif stage == "Prod":
+                    df.loc[match, "v4_direct_edit_prod"]   = True
+                    df.loc[match, "v4_prod_modified_at"]   = v4row["item_modified_at"]
+                    df.loc[match, "v4_prod_modified_by"]   = v4row["item_modified_by"]
+                    df.loc[match, "v4_last_deployed_prod"] = v4row["last_deployed_to_stage"]
+                    df.loc[match, "v4_note"]               = v4row["v4_note"]
+            else:
+                # Item exists in Test/Prod but not in Dev git status at all
+                # Append as a standalone violation row
+                new_row = {col: None for col in df.columns}
+                new_row.update({
+                    "scan_timestamp":        scan_time,
+                    "item_display_name":     v4row["item_display_name"],
+                    "item_type":             v4row["item_type"],
+                    "git_sync_state":        "Unknown",
+                    "is_uncommitted":        False,
+                    "workspace_id":          CONFIG["dev_workspace_id"],
+                    "_name_key":             key,
+                    "v1_uncommitted_in_dev": False,
+                    "v2_promoted_while_dirty":  False,
+                    "v3_modified_after_commit": False,
+                    "pending_promotion":     False,
+                    "v4_direct_edit_test":   stage == "Test",
+                    "v4_direct_edit_prod":   stage == "Prod",
+                    "v4_note":               v4row["v4_note"],
+                })
+                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 
     # ── 7. Composite violation flag ──────────────────────────────────────────
 
     df["is_violation"] = (
-        df["v1_uncommitted_in_dev"]   |
-        df["v2_promoted_while_dirty"] |
-        df["v3_modified_after_commit"]|
-        df["v4_direct_edit_test"]     |
+        df["v1_uncommitted_in_dev"]    |
+        df["v2_promoted_while_dirty"]  |
+        df["v3_modified_after_commit"] |
+        df["v4_direct_edit_test"]      |
         df["v4_direct_edit_prod"]
     )
 
-    # ── 8. Severity scoring ──────────────────────────────────────────────────
-    # CRITICAL supersedes everything — a direct Prod edit is always critical.
-    # Otherwise score by flag weight.
+    # ── 8. Severity ──────────────────────────────────────────────────────────
 
     def severity(row) -> str:
         if row["v4_direct_edit_prod"]:
             return "CRITICAL"
         score = (
-            int(row["v1_uncommitted_in_dev"])    * 1 +
-            int(row["v2_promoted_while_dirty"])  * 2 +
-            int(row["v3_modified_after_commit"]) * 1 +
-            int(row["v4_direct_edit_test"])      * 2
+            int(bool(row["v1_uncommitted_in_dev"]))    * 1 +
+            int(bool(row["v2_promoted_while_dirty"]))  * 2 +
+            int(bool(row["v3_modified_after_commit"])) * 1 +
+            int(bool(row["v4_direct_edit_test"]))      * 2
         )
         if   score >= 4: return "HIGH"
         elif score >= 2: return "MEDIUM"
@@ -674,27 +699,21 @@ if not df_downstream.empty:
 
     df["severity"] = df.apply(severity, axis=1)
 
-    # ── 9. Drift hours (Dev only) ────────────────────────────────────────────
+    # ── 9. Drift hours ───────────────────────────────────────────────────────
+    # Requires last_modified_at — currently NULL. Placeholder for future use.
     df["drift_hours"] = None
-    drift_mask = df["last_modified_at"].notna() & df["last_commit_at"].notna()
-    df.loc[drift_mask, "drift_hours"] = (
-        (df.loc[drift_mask, "last_modified_at"] -
-         df.loc[drift_mask, "last_commit_at"])
-        .dt.total_seconds() / 3600
-    ).round(1)
 
     df["scan_timestamp"] = scan_time
 
-    # Summary
-    total_v      = int(df["is_violation"].sum())
-    critical_v   = int((df["severity"] == "CRITICAL").sum())
-    high_v       = int((df["severity"] == "HIGH").sum())
-    pending_v    = int(df["pending_promotion"].sum())
-    v4_prod_v    = int(df["v4_direct_edit_prod"].sum())
+    # ── 10. Summary ──────────────────────────────────────────────────────────
+    total_v    = int(df["is_violation"].sum())
+    critical_v = int((df["severity"] == "CRITICAL").sum())
+    high_v     = int((df["severity"] == "HIGH").sum())
+    pending_v  = int(df["pending_promotion"].sum())
+    v4_prod_v  = int(df["v4_direct_edit_prod"].sum())
 
     print(f"   ✅ Detection complete.")
-    print(f"      Violations    : {total_v} "
-          f"(CRITICAL={critical_v}, HIGH={high_v})")
+    print(f"      Violations    : {total_v} (CRITICAL={critical_v}, HIGH={high_v})")
     print(f"      Direct Prod   : {v4_prod_v}")
     print(f"      Pending promo : {pending_v} (informational)")
 
@@ -708,11 +727,13 @@ df_violations = detect_violations(
     df_ado_commits
 )
 
-# Preview violations only
-cols_preview = ["item_display_name", "item_type", "severity",
-                "v1_uncommitted_in_dev", "v2_promoted_while_dirty",
-                "v4_direct_edit_test", "v4_direct_edit_prod",
-                "pending_promotion", "promoted_to_stage", "promoted_by"]
+# Preview
+cols_preview = [
+    "item_display_name", "item_type", "severity",
+    "v1_uncommitted_in_dev", "v2_promoted_while_dirty",
+    "v4_direct_edit_test", "v4_direct_edit_prod",
+    "pending_promotion", "v4_note"
+]
 display(df_violations[df_violations["is_violation"]][cols_preview])
 
 
