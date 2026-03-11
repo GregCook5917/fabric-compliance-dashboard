@@ -175,55 +175,83 @@ def name_key(s: Optional[str]) -> str:
 print("✅ Cell 3 — imports and helpers ready.")
 
 
-# -----------------------------------------------------------------------------
-# CELL 4 — Fetch Dev workspace Git status
-#
-# API: GET /workspaces/{devWorkspaceId}/git/status
-#
-# gitSyncState values returned by Fabric:
-#   Committed      — workspace matches repo HEAD  ✅
-#   Uncommitted    — workspace has changes not pushed to repo  ❌
-#   Conflict       — workspace and remote have diverged  ⚠
-#   NotInWorkspace — item exists in repo but not in workspace
-#   NotInGit       — item exists in workspace but not tracked by git
-# -----------------------------------------------------------------------------
-
 def get_dev_git_status() -> pd.DataFrame:
     print("🔍 [Dev] Fetching Git status...")
     data      = fabric_get(f"workspaces/{CONFIG['dev_workspace_id']}/git/status")
     scan_time = now_utc()
-    rows      = []
 
-    for change in data.get("changes", []):
-        ws_item     = change.get("item", {})
-        ws_head     = change.get("workspaceHead", {})
-        remote_head = change.get("remoteCommittedHead", {})
-        state       = ws_head.get("state")
+    # Top-level workspace head — contains last sync metadata
+    # This applies to the whole workspace, not per item
+    ws_head         = data.get("workspaceHead", {})
+    remote_hash     = data.get("remoteCommitHash")
+    changes         = data.get("changes", [])
+
+    # workspaceChange values observed from API:
+    #   "Added"    — exists in workspace, not yet in repo (new uncommitted item)
+    #   "Modified" — exists in both, workspace version is ahead
+    #   "Deleted"  — deleted in workspace, still in repo
+    #   null       — no workspace change (remote has changes the workspace hasn't pulled)
+    UNCOMMITTED_STATES = {"Added", "Modified", "Deleted"}
+
+    rows = []
+    for change in changes:
+        metadata    = change.get("itemMetadata", {})
+        identifier  = metadata.get("itemIdentifier", {})
+        ws_change   = change.get("workspaceChange")   # "Added", "Modified", etc.
+        rem_change  = change.get("remoteChange")       # null if no remote changes
+        conflict    = change.get("conflictType", "None")
+
+        # Derive a normalised git_sync_state to keep downstream logic consistent
+        if conflict and conflict != "None":
+            git_sync_state = "Conflict"
+        elif ws_change in UNCOMMITTED_STATES:
+            git_sync_state = "Uncommitted"
+        elif rem_change and ws_change is None:
+            git_sync_state = "NotInWorkspace"  # remote has it, workspace doesn't
+        else:
+            git_sync_state = "Uncommitted"     # catch-all for any other delta
 
         rows.append({
             "scan_timestamp":    scan_time,
-            "item_id":           ws_item.get("objectId"),
-            "item_display_name": ws_item.get("displayName"),
-            "item_type":         ws_item.get("objectType"),
-            "git_sync_state":    state,
-            "workspace_version": ws_head.get("version"),
-            "remote_version":    remote_head.get("version"),
-            "last_modified_by":  ws_head.get("lastModifiedBy", {}).get("userPrincipalName"),
-            "last_modified_at":  parse_dt(ws_head.get("lastModifiedAt")),
-            "is_uncommitted":    state == "Uncommitted",
+            "item_id":           identifier.get("objectId"),
+            "item_display_name": metadata.get("displayName"),
+            "item_type":         metadata.get("itemType"),
+            "git_sync_state":    git_sync_state,
+            "workspace_change":  ws_change,     # raw API value — useful for debugging
+            "remote_change":     rem_change,
+            "conflict_type":     conflict,
+            "is_uncommitted":    ws_change in UNCOMMITTED_STATES,
+            "workspace_version": ws_head.get("commitHash"),
+            "remote_version":    remote_hash,
+            "last_modified_by":  None,          # not returned per-item by this API
+            "last_modified_at":  None,          # not returned per-item by this API
             "workspace_id":      CONFIG["dev_workspace_id"],
-            "_name_key":         name_key(ws_item.get("displayName")),
+            "_name_key":         name_key(metadata.get("displayName")),
         })
 
-    df = pd.DataFrame(rows)
+    # ── Important: items NOT in the changes list are clean (Committed) ──────
+    # The API only returns items with pending changes — clean items are absent.
+    # We don't need to fabricate rows for them; they simply won't appear in
+    # violation detection, which is correct behaviour.
+
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
+        "scan_timestamp", "item_id", "item_display_name", "item_type",
+        "git_sync_state", "workspace_change", "remote_change", "conflict_type",
+        "is_uncommitted", "workspace_version", "remote_version",
+        "last_modified_by", "last_modified_at", "workspace_id", "_name_key",
+    ])
+
     uncommitted = int(df["is_uncommitted"].sum()) if not df.empty else 0
-    print(f"   {len(df)} items found — {uncommitted} uncommitted.")
+    print(f"   {len(df)} items with pending changes — {uncommitted} uncommitted.")
+    print(f"   Workspace commit hash : {ws_head.get('commitHash', 'unknown')}")
+    print(f"   Remote commit hash    : {remote_hash or 'unknown'}")
+    print(f"   (Items absent from this list are clean/committed)")
     return df
 
 
 df_git_status = get_dev_git_status()
 display(df_git_status[["item_display_name", "item_type", "git_sync_state",
-                        "last_modified_by", "last_modified_at"]].head(20))
+                        "workspace_change", "is_uncommitted"]])
 
 
 # -----------------------------------------------------------------------------
