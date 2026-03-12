@@ -266,10 +266,14 @@ display(df_git_status[["item_display_name", "item_type", "git_sync_state",
 #
 # API: GET /workspaces/{workspaceId}/items
 #
-# These workspaces have no Git connection. We capture the item metadata
-# (specifically modifiedDateTime) so we can compare it against the last
-# known deployment timestamp for each item — any item modified MORE RECENTLY
-# than its last deployment was edited directly in that workspace.
+# These workspaces have no Git connection. We capture the item list so we
+# can cross-reference against deployment history in Cell 8 to detect items
+# that exist in Test or Prod with no corresponding deployment record —
+# indicating they were created or edited directly in that workspace.
+#
+# Note: modifiedDateTime and modifiedBy are not returned by this API version.
+# v4 detection therefore relies on deployment history as the source of truth
+# rather than timestamp comparison.
 # -----------------------------------------------------------------------------
 
 def get_downstream_workspace_items(workspace_id: str,
@@ -294,48 +298,35 @@ def get_downstream_workspace_items(workspace_id: str,
 
     for item in all_items:
         rows.append({
-            "workspace_id":       workspace_id,
-            "stage":              stage_label,
-            "item_id":            item.get("id"),
-            "item_display_name":  item.get("displayName"),
-            "item_type":          item.get("type"),
-            "item_modified_at":   None,   # not returned by this API version
-            "item_modified_by":   None,   # not returned by this API version
-            "scan_timestamp":     scan_time,
-            "_name_key":          name_key(item.get("displayName")),
+            "workspace_id":      workspace_id,
+            "stage":             stage_label,
+            "item_id":           item.get("id"),
+            "item_display_name": item.get("displayName"),
+            "item_type":         item.get("type"),
+            "item_modified_at":  None,   # not returned by this API version
+            "item_modified_by":  None,   # not returned by this API version
+            "scan_timestamp":    scan_time,
+            "_name_key":         name_key(item.get("displayName")),
         })
 
     df = pd.DataFrame(rows)
     print(f"   {len(df)} items found in {stage_label}.")
     return df
 
-    print("df_test_items defined:", "df_test_items" in dir())
-    print("df_prod_items defined:", "df_prod_items" in dir())
 
-    try:
-        df_test_items = get_downstream_workspace_items(
-            CONFIG["test_workspace_id"], "Test"
-        )
-        print("Test items shape:", df_test_items.shape)
-    except Exception as e:
-        print(f"Test fetch FAILED: {e}")
+df_test_items = get_downstream_workspace_items(
+    CONFIG["test_workspace_id"], "Test"
+)
+df_prod_items = get_downstream_workspace_items(
+    CONFIG["prod_workspace_id"], "Prod"
+)
 
-    try:
-        df_prod_items = get_downstream_workspace_items(
-            CONFIG["prod_workspace_id"], "Prod"
-        )
-        print("Prod items shape:", df_prod_items.shape)
-    except Exception as e:
-        print(f"Prod fetch FAILED: {e}")
+df_downstream_items = pd.concat(
+    [df_test_items, df_prod_items], ignore_index=True
+)
 
-    try:
-        df_downstream_items = pd.concat(
-            [df_test_items, df_prod_items], ignore_index=True
-        )
-        print("df_downstream_items shape:", df_downstream_items.shape)
-    except Exception as e:
-        print(f"Concat FAILED: {e}")
-
+display(df_downstream_items[["stage", "item_display_name", "item_type",
+                              "item_modified_at", "item_modified_by"]].head(20))
 
 # -----------------------------------------------------------------------------
 # CELL 6 — Fetch deployment pipeline operation history
