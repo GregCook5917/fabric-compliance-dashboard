@@ -553,17 +553,33 @@ def get_deployment_operations() -> pd.DataFrame:
                 f"/operations/{op_id}"
             )
 
-            # Fabric may use different keys depending on API version —
-            # check the most common ones in order of likelihood
-            deployed_items = (op_detail.get("deployedArtifacts") or
-                              op_detail.get("deployedItems")      or
-                              op_detail.get("items")              or
-                              op_detail.get("artifacts")          or
-                              [])
+            # Fabric may use different keys depending on API version.
+            # First try known key names, then fall back to finding any
+            # non-empty list in the response automatically so we never
+            # silently miss items due to an unexpected key name.
+            known_keys = [
+                "deployedArtifacts", "deployedItems",
+                "items", "artifacts",
+            ]
+            deployed_items = None
+            for k in known_keys:
+                if op_detail.get(k):
+                    deployed_items = op_detail[k]
+                    break
 
             if not deployed_items:
-                print(f"   ⚠ Operation {op_id}: detail returned no items. "
-                      f"Available keys: {list(op_detail.keys())}")
+                # Dynamic fallback — find the first non-empty list value
+                for k, v in op_detail.items():
+                    if isinstance(v, list) and len(v) > 0:
+                        print(f"   ℹ Operation {op_id}: items found under "
+                              f"unexpected key '{k}' — using it.")
+                        deployed_items = v
+                        break
+
+            if not deployed_items:
+                print(f"   ⚠ Operation {op_id}: no item list found. "
+                      f"All keys: {list(op_detail.keys())}")
+                deployed_items = []
 
         except Exception as e:
             print(f"   ⚠ Could not fetch detail for operation {op_id}: {e}")
@@ -654,6 +670,14 @@ else:
 # -----------------------------------------------------------------------------
 
 def get_ado_last_commits() -> pd.DataFrame:
+    # Session guard — re-import if kernel restarted without re-running Cell 3.
+    # This makes Cell 7 safe to run independently during debugging.
+    import pandas as pd
+    import requests
+    from datetime import datetime, timezone, timedelta
+    from base64   import b64encode
+    from typing   import Optional
+
     print("🔍 Fetching ADO commit history...")
     org    = CONFIG["ado_organization"]
     proj   = CONFIG["ado_project"]
