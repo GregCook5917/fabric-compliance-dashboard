@@ -304,11 +304,14 @@ def get_dev_git_status() -> pd.DataFrame:
         else:
             git_sync_state = "Committed"
 
+        raw_type       = meta.get("itemType") or ""
+        item_type      = raw_type.replace("Synapse", "")
+
         rows.append({
             "scan_timestamp":    scan_time,
             "item_id":           identifier.get("objectId"),
             "item_display_name": meta.get("displayName"),
-            "item_type":         meta.get("itemType"),
+            "item_type":         item_type,
             "git_sync_state":    git_sync_state,
             "workspace_change":  ws_change,
             "remote_change":     remote_change,
@@ -516,30 +519,46 @@ def get_deployment_operations() -> pd.DataFrame:
         target_stage = stage_lookup.get(op.get("targetStageId"), "Unknown")
         performed_by = resolve_user(op.get("performedBy", {}).get("id"))
 
-        # ── Extract items from executionPlan.steps[].sourceAndTarget ─────────
-        # Confirmed field path from diagnostic:
-        #   executionPlan → steps[] → sourceAndTarget → sourceItemDisplay
-        #                                               sourceItemId
-        #                                               itemType
-        steps = op.get("executionPlan", {}).get("steps", [])
+        # ── Fetch per-operation detail to get executionPlan.steps ────────────
+        # The operations LIST endpoint returns metadata only — no steps.
+        # The individual operation endpoint returns the full executionPlan
+        # including steps[].sourceAndTarget which holds the item detail.
+        # Confirmed structure from diagnostic:
+        #   executionPlan.steps[].sourceAndTarget.sourceItemDisplay  — name
+        #   executionPlan.steps[].sourceAndTarget.sourceItemId       — GUID
+        #   executionPlan.steps[].sourceAndTarget.itemType           — type
+        #   executionPlan.steps[].status                             — Succeeded/Failed
+        #   executionPlan.steps[].preDeploymentDiffState             — New/Different/etc
+
+        steps = []
+        try:
+            op_detail = fabric_get(
+                f"deploymentPipelines/{CONFIG['deployment_pipeline_id']}"
+                f"/operations/{op_id}"
+            )
+            steps = op_detail.get("executionPlan", {}).get("steps", [])
+            if not steps:
+                print(f"   ⚠ Operation {op_id}: executionPlan.steps is empty. "
+                      f"Top-level keys: {list(op_detail.keys())}")
+        except Exception as e:
+            print(f"   ⚠ Could not fetch detail for operation {op_id}: {e}")
 
         if not steps:
-            # No steps — record the operation shell so it's visible in SQL
             rows.append({
-                "operation_id":            op_id,
-                "operation_type":          op.get("type"),
-                "operation_status":        status,
-                "source_stage":            source_stage,
-                "target_stage":            target_stage,
-                "created_at":              created_at,
-                "completed_at":            completed_at,
-                "triggered_by":            performed_by,
-                "item_id":                 None,
-                "item_display_name":       None,
-                "item_type":               None,
-                "item_deploy_status":      None,
-                "pre_deployment_state":    None,
-                "_name_key":               None,
+                "operation_id":         op_id,
+                "operation_type":       op.get("type"),
+                "operation_status":     status,
+                "source_stage":         source_stage,
+                "target_stage":         target_stage,
+                "created_at":           created_at,
+                "completed_at":         completed_at,
+                "triggered_by":         performed_by,
+                "item_id":              None,
+                "item_display_name":    None,
+                "item_type":            None,
+                "item_deploy_status":   None,
+                "pre_deployment_state": None,
+                "_name_key":            None,
             })
             continue
 
@@ -547,7 +566,11 @@ def get_deployment_operations() -> pd.DataFrame:
             sat       = step.get("sourceAndTarget", {}) or {}
             item_name = sat.get("sourceItemDisplay")
             item_id   = sat.get("sourceItemId")
-            item_type = sat.get("itemType")
+            # Normalise item type — Git API returns "SynapseNotebook",
+            # Items API returns "Notebook". Strip "Synapse" prefix so
+            # _name_key joins work correctly across both sources.
+            raw_type  = sat.get("itemType") or ""
+            item_type = raw_type.replace("Synapse", "")
 
             rows.append({
                 "operation_id":         op_id,
