@@ -735,6 +735,21 @@ def detect_violations(df_git:        pd.DataFrame,
                       df_ado:        pd.DataFrame) -> pd.DataFrame:
 
     print("🔎 Running violation detection...")
+
+    # Isolation checks — remove after debugging
+    print("df_deps dtypes:")
+    print(df_deps[["completed_at", "created_at"]].dtypes)
+    print("df_deps completed_at nulls:", df_deps["completed_at"].isna().sum())
+    print("df_deps completed_at sample:", df_deps["completed_at"].iloc[0] if not df_deps.empty else "empty")
+    
+    print("df_ado dtypes:")
+    if not df_ado.empty:
+        print(df_ado[["last_commit_at"]].dtypes)
+        print("df_ado last_commit_at sample:", df_ado["last_commit_at"].iloc[0])
+    
+    print("df_git dtypes:")
+    print(df_git[["last_modified_at"]].dtypes if "last_modified_at" in df_git.columns else "no last_modified_at")
+
     scan_time = now_utc()
 
     # ── 1. Build last-promotion lookup ───────────────────────────────────────
