@@ -977,8 +977,10 @@ def detect_violations(df_git:        pd.DataFrame,
     return df
 
 
+# CORRECT:
+df_git_status["last_modified_at"] = pd.to_datetime(df_git_status["last_modified_at"], utc=True, errors="coerce")
+
 df_violations = detect_violations(
-    df_git["last_modified_at"] = pd.to_datetime(df_git["last_modified_at"], utc=True, errors="coerce")
     df_git_status,
     df_downstream_items,
     df_deployments,
