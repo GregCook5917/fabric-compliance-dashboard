@@ -402,128 +402,92 @@ display(df_downstream_items[["stage", "item_display_name", "item_type",
 # -----------------------------------------------------------------------------
 # CELL 6 — Fetch deployment pipeline operations (promotion history)
 #
-# Changes from v1:
-#   • Stage lookup uses GUIDs not order integers
-#   • Timestamps use executionStartTime / executionEndTime
-#   • performedBy resolved to UPN via workspace member list
-#   • Per-operation detail call to retrieve deployed item list
-#   • Top-level response key is "value" not "changes"
+# Confirmed API response structure (from diagnostic output):
+#   operation fields:
+#     id, type, status, executionStartTime, executionEndTime,
+#     sourceStageId, targetStageId, performedBy, executionPlan
+#
+#   Deployed items are NOT at the top level.
+#   They live at: executionPlan.steps[].sourceAndTarget
+#     sourceAndTarget.sourceItemId      — item GUID
+#     sourceAndTarget.sourceItemDisplay — item display name  ← key field
+#     sourceAndTarget.itemType          — e.g. "Notebook"
+#   Each step also has:
+#     step.status                       — "Succeeded" / "Failed"
+#     step.preDeploymentDiffState       — "New" / "Different" / "NoDifference"
 # -----------------------------------------------------------------------------
 
 
-# ── Step 1 — Build user GUID → UPN lookup from workspace member lists ────────
-# Fabric returns user GUIDs in performedBy — we resolve them to readable UPNs
-# using the roleAssignments endpoint across all three workspaces.
-# Falls back to the raw GUID if a user has been removed from all workspaces.
-
-_user_lookup: dict = {}
-
+# ── User GUID → UPN lookup ───────────────────────────────────────────────────
+# Defined here as well as Cell 3 so Cell 6 is self-contained when run
+# individually. The global _user_lookup cache prevents double-fetching.
 
 def build_user_lookup() -> dict:
-    """
-    Calls GET /workspaces/{id}/roleAssignments for Dev, Test, and Prod.
-    Returns {user_id_guid: userPrincipalName} for all workspace members.
-    """
     print("   👤 Building user GUID → UPN lookup...")
     lookup = {}
-
-    workspace_ids = [
-        CONFIG["dev_workspace_id"],
-        CONFIG["test_workspace_id"],
-        CONFIG["prod_workspace_id"],
-    ]
-
-    for ws_id in workspace_ids:
+    for ws_id in [CONFIG["dev_workspace_id"],
+                  CONFIG["test_workspace_id"],
+                  CONFIG["prod_workspace_id"]]:
         try:
-            data    = fabric_get(f"workspaces/{ws_id}/roleAssignments")
-            members = data.get("value", [])
-
-            for member in members:
+            data = fabric_get(f"workspaces/{ws_id}/roleAssignments")
+            for member in data.get("value", []):
                 principal = member.get("principal", {})
                 guid      = principal.get("id")
                 upn       = (principal.get("userPrincipalName") or
-                             principal.get("displayName")        or
-                             guid)
+                             principal.get("displayName") or guid)
                 if guid and guid not in lookup:
                     lookup[guid] = upn
-
         except Exception as e:
             print(f"   ⚠ Could not fetch members for workspace {ws_id}: {e}")
-
     print(f"   {len(lookup)} unique users mapped.")
     return lookup
 
 
 def resolve_user(guid: str = None) -> str:
-    """Resolve a user GUID to UPN. Returns the GUID itself if not found."""
     if not guid:
         return None
     return _user_lookup.get(guid, guid)
 
 
-# ── Step 2 — Fetch pipeline stage definitions (GUID → name) ─────────────────
-# The operations API returns sourceStageId / targetStageId as GUIDs.
-# We resolve these by fetching the pipeline definition first.
+# ── Stage GUID → name lookup ─────────────────────────────────────────────────
 
 def get_pipeline_stages() -> dict:
-    """
-    Calls GET /deploymentPipelines/{id} to get stage definitions.
-    Returns {stage_guid: stage_display_name}.
-    
-    Fabric orders stages by index: 0 = Dev, 1 = Test, 2 = Prod.
-    We use the stage's own displayName if present, otherwise fall back
-    to positional names so the lookup always returns something readable.
-    """
     print("   🗂 Fetching pipeline stage definitions...")
     fallback_names = ["Dev", "Test", "Prod"]
-
     try:
-        data   = fabric_get(
-            f"deploymentPipelines/{CONFIG['deployment_pipeline_id']}"
-        )
+        data   = fabric_get(f"deploymentPipelines/{CONFIG['deployment_pipeline_id']}")
         stages = data.get("stages", [])
     except Exception as e:
         print(f"   ⚠ Could not fetch pipeline definition: {e}")
         return {}
-
     lookup = {}
     for i, stage in enumerate(stages):
         stage_id   = stage.get("id")
         stage_name = (stage.get("displayName") or
-                      (fallback_names[i] if i < len(fallback_names)
-                       else f"Stage{i}"))
+                      (fallback_names[i] if i < len(fallback_names) else f"Stage{i}"))
         lookup[stage_id] = stage_name
         print(f"      Stage {i}: {stage_name} → {stage_id}")
-
     return lookup
 
 
-# ── Step 3 — Main function ───────────────────────────────────────────────────
+# ── Main function ─────────────────────────────────────────────────────────────
 
 def get_deployment_operations() -> pd.DataFrame:
     """
-    Fetches all deployment pipeline operations within the lookback window
-    and enriches each with:
-      - Resolved stage names (Dev / Test / Prod)
-      - Resolved performer UPN (not raw GUID)
-      - Per-operation deployed item list via detail endpoint
+    Fetches deployment pipeline operations and extracts deployed item detail
+    from executionPlan.steps[].sourceAndTarget — confirmed structure from
+    diagnostic output.
 
-    API calls made:
-      GET /deploymentPipelines/{id}                          — stage definitions
-      GET /deploymentPipelines/{id}/operations               — operation list
-      GET /deploymentPipelines/{id}/operations/{operationId} — item detail (per op)
+    One row per deployed item per operation. An operation that deployed
+    3 items produces 3 rows, all sharing the same operation_id.
     """
     global _user_lookup
-
-    # Build user lookup once per scan run
     if not _user_lookup:
         _user_lookup = build_user_lookup()
 
-    # Build stage GUID → name lookup
     stage_lookup = get_pipeline_stages()
 
     print("🔍 Fetching deployment pipeline operations...")
-
     cutoff = now_utc() - timedelta(days=CONFIG["lookback_days"])
 
     try:
@@ -536,16 +500,13 @@ def get_deployment_operations() -> pd.DataFrame:
         return pd.DataFrame()
 
     print(f"   {len(all_ops)} total operations returned.")
-
     rows = []
 
     for op in all_ops:
 
-        # Timestamps — Fabric uses executionStartTime / executionEndTime
         created_at   = parse_dt(op.get("executionStartTime"))
         completed_at = parse_dt(op.get("executionEndTime"))
 
-        # Skip operations outside the lookback window
         if created_at and created_at < cutoff:
             continue
 
@@ -555,112 +516,63 @@ def get_deployment_operations() -> pd.DataFrame:
         target_stage = stage_lookup.get(op.get("targetStageId"), "Unknown")
         performed_by = resolve_user(op.get("performedBy", {}).get("id"))
 
-        # ── Per-operation detail call to get deployed item list ──────────────
-        # The operation list endpoint does not include item-level detail.
-        # We call the individual operation endpoint to retrieve it.
-        deployed_items = []
+        # ── Extract items from executionPlan.steps[].sourceAndTarget ─────────
+        # Confirmed field path from diagnostic:
+        #   executionPlan → steps[] → sourceAndTarget → sourceItemDisplay
+        #                                               sourceItemId
+        #                                               itemType
+        steps = op.get("executionPlan", {}).get("steps", [])
 
-        try:
-            op_detail = fabric_get(
-                f"deploymentPipelines/{CONFIG['deployment_pipeline_id']}"
-                f"/operations/{op_id}"
-            )
-
-            # ── Inline diagnostic — prints for first operation only ──────────
-            # Shows the raw API response so we can confirm the item key name.
-            # Safe to leave in permanently — only fires once per run.
-            if not rows:
-                print(f"\n   🔬 DIAGNOSTIC — raw detail for first operation:")
-                print(f"      Keys: {list(op_detail.keys())}")
-                for dk, dv in op_detail.items():
-                    if isinstance(dv, list):
-                        print(f"      List '{dk}': {len(dv)} item(s)")
-                        if dv and isinstance(dv[0], dict):
-                            print(f"      First item keys: {list(dv[0].keys())}")
-                            print(f"      First item: {json.dumps(dv[0], indent=8, default=str)}")
-                    else:
-                        print(f"      '{dk}': {dv}")
-                print()
-
-            # Try known key names first, then dynamically find any non-empty list.
-            # This handles API version differences without code changes.
-            known_keys = ["deployedArtifacts", "deployedItems", "items", "artifacts"]
-            deployed_items = None
-
-            for k in known_keys:
-                if op_detail.get(k):
-                    deployed_items = op_detail[k]
-                    break
-
-            if not deployed_items:
-                for k, v in op_detail.items():
-                    if isinstance(v, list) and len(v) > 0:
-                        print(f"   ℹ Operation {op_id}: items found under "
-                              f"unexpected key '{k}' — using it.")
-                        deployed_items = v
-                        break
-
-            if not deployed_items:
-                print(f"   ⚠ Operation {op_id}: no item list found. "
-                      f"All keys: {list(op_detail.keys())}")
-                deployed_items = []
-
-        except Exception as e:
-            print(f"   ⚠ Could not fetch detail for operation {op_id}: {e}")
-
-        # ── Build rows ───────────────────────────────────────────────────────
-        if not deployed_items:
-            # Record the operation itself even if we can't get item detail,
-            # so the deployment event is visible in the pipeline ops table.
+        if not steps:
+            # No steps — record the operation shell so it's visible in SQL
             rows.append({
-                "operation_id":      op_id,
-                "operation_type":    op.get("type"),
-                "operation_status":  status,
-                "source_stage":      source_stage,
-                "target_stage":      target_stage,
-                "created_at":        created_at,
-                "completed_at":      completed_at,
-                "triggered_by":      performed_by,
-                "item_id":           None,
-                "item_display_name": None,
-                "item_type":         None,
-                "_name_key":         None,
+                "operation_id":            op_id,
+                "operation_type":          op.get("type"),
+                "operation_status":        status,
+                "source_stage":            source_stage,
+                "target_stage":            target_stage,
+                "created_at":              created_at,
+                "completed_at":            completed_at,
+                "triggered_by":            performed_by,
+                "item_id":                 None,
+                "item_display_name":       None,
+                "item_type":               None,
+                "item_deploy_status":      None,
+                "pre_deployment_state":    None,
+                "_name_key":               None,
             })
-        else:
-            for item in deployed_items:
-                # Field names vary across API versions — check alternates
-                item_id   = (item.get("sourceObjectId") or
-                             item.get("objectId")        or
-                             item.get("id"))
-                item_name = item.get("displayName")
-                item_type = (item.get("objectType") or
-                             item.get("type"))
+            continue
 
-                rows.append({
-                    "operation_id":      op_id,
-                    "operation_type":    op.get("type"),
-                    "operation_status":  status,
-                    "source_stage":      source_stage,
-                    "target_stage":      target_stage,
-                    "created_at":        created_at,
-                    "completed_at":      completed_at,
-                    "triggered_by":      performed_by,
-                    "item_id":           item_id,
-                    "item_display_name": item_name,
-                    "item_type":         item_type,
-                    "_name_key":         name_key(item_name),
-                })
+        for step in steps:
+            sat       = step.get("sourceAndTarget", {}) or {}
+            item_name = sat.get("sourceItemDisplay")
+            item_id   = sat.get("sourceItemId")
+            item_type = sat.get("itemType")
+
+            rows.append({
+                "operation_id":         op_id,
+                "operation_type":       op.get("type"),
+                "operation_status":     status,
+                "source_stage":         source_stage,
+                "target_stage":         target_stage,
+                "created_at":           created_at,
+                "completed_at":         completed_at,
+                "triggered_by":         performed_by,
+                "item_id":              item_id,
+                "item_display_name":    item_name,
+                "item_type":            item_type,
+                "item_deploy_status":   step.get("status"),
+                "pre_deployment_state": step.get("preDeploymentDiffState"),
+                "_name_key":            name_key(item_name),
+            })
 
     df = pd.DataFrame(rows) if rows else pd.DataFrame()
 
-    # ── Summary ──────────────────────────────────────────────────────────────
     if not df.empty:
-        ops_with_items = df[df["item_display_name"].notna()]["operation_id"].nunique()
-        ops_no_items   = df[df["item_display_name"].isna()]["operation_id"].nunique()
-        print(f"   ✅ {df['operation_id'].nunique()} operations processed.")
-        print(f"      {ops_with_items} with item detail / "
-              f"{ops_no_items} without item detail.")
-        print(f"      {len(df)} total rows built.")
+        named = df["item_display_name"].notna().sum()
+        print(f"   ✅ {df['operation_id'].nunique()} operations, "
+              f"{named} item rows with names, "
+              f"{len(df) - named} without.")
     else:
         print("   ⚠ No deployment operation rows produced.")
 
@@ -674,7 +586,8 @@ df_deployments = get_deployment_operations()
 if not df_deployments.empty:
     display(df_deployments[[
         "item_display_name", "item_type", "source_stage",
-        "target_stage", "triggered_by", "created_at", "operation_status"
+        "target_stage", "triggered_by", "created_at",
+        "operation_status", "item_deploy_status", "pre_deployment_state"
     ]].head(20))
 else:
     print("No deployment data returned — check warnings above.")
@@ -1145,15 +1058,17 @@ def ensure_schema_and_tables(conn):
     IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES
                    WHERE TABLE_SCHEMA='{s}' AND TABLE_NAME='fact_deployment_ops_current')
     CREATE TABLE {s}.fact_deployment_ops_current (
-        operation_id        NVARCHAR(128),
-        item_display_name   NVARCHAR(256),
-        item_type           NVARCHAR(64),
-        source_stage        NVARCHAR(32),
-        target_stage        NVARCHAR(32),
-        operation_status    NVARCHAR(32),
-        triggered_by        NVARCHAR(256),
-        created_at          DATETIME2,
-        completed_at        DATETIME2
+        operation_id          NVARCHAR(128),
+        item_display_name     NVARCHAR(256),
+        item_type             NVARCHAR(64),
+        source_stage          NVARCHAR(32),
+        target_stage          NVARCHAR(32),
+        operation_status      NVARCHAR(32),
+        triggered_by          NVARCHAR(256),
+        created_at            DATETIME2,
+        completed_at          DATETIME2,
+        item_deploy_status    NVARCHAR(32),    -- step-level status per item
+        pre_deployment_state  NVARCHAR(64)     -- New / Different / NoDifference
     );
     """
 
@@ -1230,6 +1145,7 @@ with get_sql_connection() as conn:
             "operation_id", "item_display_name", "item_type",
             "source_stage", "target_stage", "operation_status",
             "triggered_by", "created_at", "completed_at",
+            "item_deploy_status", "pre_deployment_state",
         ])
 
 print("\n🎉 All tables refreshed.")
