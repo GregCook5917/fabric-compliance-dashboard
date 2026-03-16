@@ -413,7 +413,7 @@ display(df_downstream_items[["stage", "item_display_name", "item_type",
 #   Deployed items are NOT at the top level.
 #   They live at: executionPlan.steps[].sourceAndTarget
 #     sourceAndTarget.sourceItemId      — item GUID
-#     sourceAndTarget.sourceItemDisplay — item display name  ← key field
+#     sourceAndTarget.sourceItemDisplayName — item display name  ← key field
 #     sourceAndTarget.itemType          — e.g. "Notebook"
 #   Each step also has:
 #     step.status                       — "Succeeded" / "Failed"
@@ -524,7 +524,7 @@ def get_deployment_operations() -> pd.DataFrame:
         # The individual operation endpoint returns the full executionPlan
         # including steps[].sourceAndTarget which holds the item detail.
         # Confirmed structure from diagnostic:
-        #   executionPlan.steps[].sourceAndTarget.sourceItemDisplay  — name
+        #   executionPlan.steps[].sourceAndTarget.sourceItemDisplayName  — name
         #   executionPlan.steps[].sourceAndTarget.sourceItemId       — GUID
         #   executionPlan.steps[].sourceAndTarget.itemType           — type
         #   executionPlan.steps[].status                             — Succeeded/Failed
@@ -564,7 +564,7 @@ def get_deployment_operations() -> pd.DataFrame:
 
         for step in steps:
             sat       = step.get("sourceAndTarget", {}) or {}
-            item_name = sat.get("sourceItemDisplay")
+            item_name = sat.get("sourceItemDisplayName")
             item_id   = sat.get("sourceItemId")
             # Normalise item type — Git API returns "SynapseNotebook",
             # Items API returns "Notebook". Strip "Synapse" prefix so
