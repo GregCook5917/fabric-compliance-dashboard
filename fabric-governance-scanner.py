@@ -155,12 +155,25 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def parse_dt(s: Optional[str]) -> Optional[datetime]:
-    """Parse ISO 8601 string → UTC-aware datetime. Returns None if blank/invalid."""
-    if not s:
+def parse_dt(s) -> Optional[datetime]:
+    """
+    Parse a datetime value → UTC-aware datetime. Returns None if blank/invalid.
+    Handles:
+      - ISO 8601 strings  e.g. "2026-03-09T18:23:10.873Z"
+      - Integer epoch milliseconds e.g. 1741542190873
+      - Integer epoch seconds e.g. 1741542190
+    """
+    if not s and s != 0:
         return None
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
+        # Integer — treat as epoch. >1e10 means milliseconds, else seconds.
+        if isinstance(s, (int, float)):
+            ts = s / 1000 if s > 1e10 else s
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        # String — parse ISO 8601
+        return datetime.fromisoformat(
+            str(s).replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
     except Exception:
         return None
 
@@ -553,22 +566,33 @@ def get_deployment_operations() -> pd.DataFrame:
                 f"/operations/{op_id}"
             )
 
-            # Fabric may use different keys depending on API version.
-            # First try known key names, then fall back to finding any
-            # non-empty list in the response automatically so we never
-            # silently miss items due to an unexpected key name.
-            known_keys = [
-                "deployedArtifacts", "deployedItems",
-                "items", "artifacts",
-            ]
+            # ── Inline diagnostic — prints for first operation only ──────────
+            # Shows the raw API response so we can confirm the item key name.
+            # Safe to leave in permanently — only fires once per run.
+            if not rows:
+                print(f"\n   🔬 DIAGNOSTIC — raw detail for first operation:")
+                print(f"      Keys: {list(op_detail.keys())}")
+                for dk, dv in op_detail.items():
+                    if isinstance(dv, list):
+                        print(f"      List '{dk}': {len(dv)} item(s)")
+                        if dv and isinstance(dv[0], dict):
+                            print(f"      First item keys: {list(dv[0].keys())}")
+                            print(f"      First item: {json.dumps(dv[0], indent=8, default=str)}")
+                    else:
+                        print(f"      '{dk}': {dv}")
+                print()
+
+            # Try known key names first, then dynamically find any non-empty list.
+            # This handles API version differences without code changes.
+            known_keys = ["deployedArtifacts", "deployedItems", "items", "artifacts"]
             deployed_items = None
+
             for k in known_keys:
                 if op_detail.get(k):
                     deployed_items = op_detail[k]
                     break
 
             if not deployed_items:
-                # Dynamic fallback — find the first non-empty list value
                 for k, v in op_detail.items():
                     if isinstance(v, list) and len(v) > 0:
                         print(f"   ℹ Operation {op_id}: items found under "
