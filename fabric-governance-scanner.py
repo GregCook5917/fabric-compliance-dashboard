@@ -605,6 +605,8 @@ def get_deployment_operations() -> pd.DataFrame:
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 df_deployments = get_deployment_operations()
+df_deployments["created_at"]  = pd.to_datetime(df_deployments["created_at"], utc=True, errors="coerce")
+df_deployments["completed_at"] = pd.to_datetime(df_deployments["completed_at"], utc=True, errors="coerce")
 
 if not df_deployments.empty:
     display(df_deployments[[
