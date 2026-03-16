@@ -705,7 +705,6 @@ df_ado_commits = get_ado_last_commits()
 if not df_ado_commits.empty:
     display(df_ado_commits.head(10))
 
-
 # -----------------------------------------------------------------------------
 # CELL 8 — Detect violations
 #
@@ -737,38 +736,78 @@ def detect_violations(df_git:        pd.DataFrame,
     print("🔎 Running violation detection...")
     scan_time = now_utc()
 
-    # ── 1. Build last-promotion lookup ───────────────────────────────────────
+    # ── 0. Defensive type coercion on all inputs ─────────────────────────────
+    # Converts any Python None to NaT/False before any comparison runs.
+    # This prevents AttributeError: 'NoneType' object has no attribute '_value'
+    # which occurs when pandas tries to compare None against a Timestamp.
+
+    df_git  = df_git.copy()
+    df_deps = df_deps.copy() if not df_deps.empty else pd.DataFrame()
+    df_ado  = df_ado.copy()  if not df_ado.empty  else pd.DataFrame()
+
+    # Coerce datetime columns
+    for col in ["last_modified_at", "last_commit_at"]:
+        if col in df_git.columns:
+            df_git[col] = pd.to_datetime(df_git[col], utc=True, errors="coerce")
+
+    if not df_ado.empty and "last_commit_at" in df_ado.columns:
+        df_ado["last_commit_at"] = pd.to_datetime(df_ado["last_commit_at"], utc=True, errors="coerce")
 
     if not df_deps.empty:
+        for col in ["completed_at", "created_at"]:
+            if col in df_deps.columns:
+                df_deps[col] = pd.to_datetime(df_deps[col], utc=True, errors="coerce")
+        # Coerce _name_key — None breaks groupby
+        df_deps["_name_key"] = df_deps["_name_key"].fillna("")
+
+    # Coerce boolean column in git status
+    if "is_uncommitted" in df_git.columns:
+        df_git["is_uncommitted"] = df_git["is_uncommitted"].fillna(False).astype(bool)
+
+    print(f"   Input shapes — git:{df_git.shape} downstream:{df_downstream.shape} "
+          f"deps:{df_deps.shape} ado:{df_ado.shape}")
+
+    # ── 1. Build last-promotion lookup ───────────────────────────────────────
+
+    if not df_deps.empty and "operation_status" in df_deps.columns:
         successful_deps = df_deps[df_deps["operation_status"] == "Succeeded"].copy()
+        # Drop rows where _name_key is blank — these are shell operation rows
+        # with no item detail and would pollute the groupby
+        successful_deps = successful_deps[successful_deps["_name_key"] != ""]
 
-        # Last promotion per item per target stage — anchors v4 detection
-        last_promo_by_stage = (
-            successful_deps
-            .sort_values("completed_at", ascending=False)
-            .groupby(["_name_key", "target_stage"])
-            .first()
-            .reset_index()
-            [["_name_key", "target_stage", "completed_at",
-              "triggered_by", "source_stage", "operation_id"]]
-        )
+        if not successful_deps.empty:
+            last_promo_by_stage = (
+                successful_deps
+                .sort_values("completed_at", ascending=False)
+                .groupby(["_name_key", "target_stage"])
+                .first()
+                .reset_index()
+                [["_name_key", "target_stage", "completed_at",
+                  "triggered_by", "source_stage", "operation_id"]]
+            )
 
-        # Last promotion per item regardless of stage — anchors v2 detection
-        last_promo_overall = (
-            successful_deps
-            .sort_values("completed_at", ascending=False)
-            .groupby("_name_key")
-            .first()
-            .reset_index()
-            [["_name_key", "completed_at", "target_stage",
-              "triggered_by", "source_stage", "operation_id"]]
-            .rename(columns={
-                "completed_at": "last_promoted_at",
-                "target_stage": "promoted_to_stage",
-                "triggered_by": "promoted_by",
-                "source_stage": "promoted_from_stage",
-            })
-        )
+            last_promo_overall = (
+                successful_deps
+                .sort_values("completed_at", ascending=False)
+                .groupby("_name_key")
+                .first()
+                .reset_index()
+                [["_name_key", "completed_at", "target_stage",
+                  "triggered_by", "source_stage", "operation_id"]]
+                .rename(columns={
+                    "completed_at": "last_promoted_at",
+                    "target_stage": "promoted_to_stage",
+                    "triggered_by": "promoted_by",
+                    "source_stage": "promoted_from_stage",
+                })
+            )
+        else:
+            last_promo_by_stage = pd.DataFrame(columns=[
+                "_name_key", "target_stage", "completed_at",
+                "triggered_by", "source_stage", "operation_id"])
+            last_promo_overall = pd.DataFrame(columns=[
+                "_name_key", "last_promoted_at", "promoted_to_stage",
+                "promoted_by", "promoted_from_stage", "operation_id"])
     else:
         last_promo_by_stage = pd.DataFrame(columns=[
             "_name_key", "target_stage", "completed_at",
@@ -777,11 +816,10 @@ def detect_violations(df_git:        pd.DataFrame,
             "_name_key", "last_promoted_at", "promoted_to_stage",
             "promoted_by", "promoted_from_stage", "operation_id"])
 
+    print(f"   Promotion lookups — by_stage:{len(last_promo_by_stage)} rows, "
+          f"overall:{len(last_promo_overall)} rows")
+
     # ── 2. v4 — Detect items in Test/Prod with no deployment record ──────────
-    # Since modifiedDateTime is not returned by the Fabric Items API,
-    # we use deployment history as the source of truth.
-    # An item that exists in Test or Prod but has no successful deployment
-    # record within the lookback window has an unverified origin.
 
     v4_rows = []
 
@@ -790,26 +828,25 @@ def detect_violations(df_git:        pd.DataFrame,
             stage  = row["stage"]
             name_k = row["_name_key"]
 
-            # Check if a deployment record exists for this item to this stage
             has_deployment = False
             if not last_promo_by_stage.empty:
                 match = (
                     (last_promo_by_stage["_name_key"]    == name_k) &
                     (last_promo_by_stage["target_stage"] == stage)
                 )
-                has_deployment = match.any()
+                has_deployment = bool(match.any())
 
             if not has_deployment:
-                severity = "CRITICAL" if stage == "Prod" else "MEDIUM"
+                sev = "CRITICAL" if stage == "Prod" else "MEDIUM"
                 v4_rows.append({
                     "item_display_name":      row["item_display_name"],
                     "item_type":              row["item_type"],
                     "affected_stage":         stage,
-                    "item_modified_at":       None,
+                    "item_modified_at":       pd.NaT,
                     "item_modified_by":       None,
-                    "last_deployed_to_stage": None,
+                    "last_deployed_to_stage": pd.NaT,
                     "v4_direct_edit":         True,
-                    "v4_severity":            severity,
+                    "v4_severity":            sev,
                     "v4_note":                (f"No deployment record in last "
                                                f"{CONFIG['lookback_days']} days — "
                                                f"unverified origin in {stage}"),
@@ -823,15 +860,24 @@ def detect_violations(df_git:        pd.DataFrame,
                  "v4_severity", "v4_note", "_name_key"])
 
     critical_count = int((df_v4["v4_severity"] == "CRITICAL").sum()) if not df_v4.empty else 0
-    print(f"   v4 unverified items: {len(df_v4)} "
-          f"({critical_count} CRITICAL in Prod)")
+    print(f"   v4 unverified items: {len(df_v4)} ({critical_count} CRITICAL in Prod)")
 
     # ── 3. Build main violation DataFrame from Dev git status ────────────────
 
     df = df_git.copy()
 
-    # Join last overall promotion onto Dev rows
-    df = df.merge(last_promo_overall, on="_name_key", how="left")
+    # Join last overall promotion
+    if not last_promo_overall.empty:
+        df = df.merge(last_promo_overall, on="_name_key", how="left")
+    else:
+        df["last_promoted_at"]    = pd.NaT
+        df["promoted_to_stage"]   = None
+        df["promoted_by"]         = None
+        df["promoted_from_stage"] = None
+        df["operation_id"]        = None
+
+    # Coerce last_promoted_at after merge
+    df["last_promoted_at"] = pd.to_datetime(df["last_promoted_at"], utc=True, errors="coerce")
 
     # Join ADO commit history
     if not df_ado.empty:
@@ -847,19 +893,20 @@ def detect_violations(df_git:        pd.DataFrame,
         df["last_commit_msg"] = None
         df["last_commit_id"]  = None
 
+    # Coerce last_commit_at after merge
+    df["last_commit_at"] = pd.to_datetime(df["last_commit_at"], utc=True, errors="coerce")
+
     # ── 4. v1, v2, v3 flags ─────────────────────────────────────────────────
 
-    df["v1_uncommitted_in_dev"] = df["is_uncommitted"]
+    df["v1_uncommitted_in_dev"] = df["is_uncommitted"].fillna(False).astype(bool)
 
     df["v2_promoted_while_dirty"] = (
-        df["last_promoted_at"].notna() & df["is_uncommitted"]
+        df["last_promoted_at"].notna() & df["is_uncommitted"].fillna(False).astype(bool)
     )
 
-    # v3 requires last_modified_at from Dev — currently NULL from API.
-    # Defaulting to False until an alternative data source is identified.
     df["v3_modified_after_commit"] = False
 
-    # ── 5. pending_promotion (informational — not a violation) ───────────────
+    # ── 5. pending_promotion ─────────────────────────────────────────────────
 
     df["pending_promotion"] = False
     pp_mask = (
@@ -872,10 +919,7 @@ def detect_violations(df_git:        pd.DataFrame,
     )
     df.loc[pp_mask, "pending_promotion"] = True
 
-    # ── 6. Join v4 flags back onto Dev rows ──────────────────────────────────
-    # v4 violations originate in downstream workspaces. We join them back
-    # onto Dev rows by name so Power BI has one unified fact table.
-    # Items in Test/Prod that have no matching Dev row are appended below.
+    # ── 6. v4 flags ──────────────────────────────────────────────────────────
 
     df["v4_direct_edit_test"]   = False
     df["v4_direct_edit_prod"]   = False
@@ -895,51 +939,48 @@ def detect_violations(df_git:        pd.DataFrame,
 
             if match.any():
                 if stage == "Test":
-                    df.loc[match, "v4_direct_edit_test"]   = True
-                    df.loc[match, "v4_test_modified_at"]   = v4row["item_modified_at"]
-                    df.loc[match, "v4_test_modified_by"]   = v4row["item_modified_by"]
-                    df.loc[match, "v4_last_deployed_test"] = v4row["last_deployed_to_stage"]
-                    df.loc[match, "v4_note"]               = v4row["v4_note"]
+                    df.loc[match, "v4_direct_edit_test"] = True
+                    df.loc[match, "v4_test_modified_by"] = v4row["item_modified_by"]
+                    df.loc[match, "v4_note"]             = v4row["v4_note"]
                 elif stage == "Prod":
-                    df.loc[match, "v4_direct_edit_prod"]   = True
-                    df.loc[match, "v4_prod_modified_at"]   = v4row["item_modified_at"]
-                    df.loc[match, "v4_prod_modified_by"]   = v4row["item_modified_by"]
-                    df.loc[match, "v4_last_deployed_prod"] = v4row["last_deployed_to_stage"]
-                    df.loc[match, "v4_note"]               = v4row["v4_note"]
+                    df.loc[match, "v4_direct_edit_prod"] = True
+                    df.loc[match, "v4_prod_modified_by"] = v4row["item_modified_by"]
+                    df.loc[match, "v4_note"]             = v4row["v4_note"]
             else:
-                # Item exists in Test/Prod but not in Dev git status at all
-                # Append as a standalone violation row
+                # Item exists in Test/Prod but not in Dev git status
                 new_row = {col: None for col in df.columns}
                 new_row.update({
-                    "scan_timestamp":        scan_time,
-                    "item_display_name":     v4row["item_display_name"],
-                    "item_type":             v4row["item_type"],
-                    "git_sync_state":        "Unknown",
-                    "is_uncommitted":        False,
-                    "workspace_id":          CONFIG["dev_workspace_id"],
-                    "_name_key":             key,
-                    "v1_uncommitted_in_dev": False,
+                    "scan_timestamp":           scan_time,
+                    "item_display_name":        v4row["item_display_name"],
+                    "item_type":                v4row["item_type"],
+                    "git_sync_state":           "Unknown",
+                    "is_uncommitted":           False,
+                    "workspace_id":             CONFIG["dev_workspace_id"],
+                    "_name_key":                key,
+                    "v1_uncommitted_in_dev":    False,
                     "v2_promoted_while_dirty":  False,
                     "v3_modified_after_commit": False,
-                    "pending_promotion":     False,
-                    "v4_direct_edit_test":   stage == "Test",
-                    "v4_direct_edit_prod":   stage == "Prod",
-                    "v4_note":               v4row["v4_note"],
+                    "pending_promotion":        False,
+                    "v4_direct_edit_test":      stage == "Test",
+                    "v4_direct_edit_prod":      stage == "Prod",
+                    "v4_note":                  v4row["v4_note"],
                 })
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 
-    # ── 7. Composite violation flag ──────────────────────────────────────────
-    
-    # Coerce all boolean flag columns to bool — pd.concat appended rows
-    # may contain None instead of False which breaks the | operator
+    # ── 7. Final boolean coercion — must run AFTER pd.concat ─────────────────
+    # pd.concat can reintroduce None in bool columns from the appended rows.
+    # This is the definitive fix for AttributeError: NoneType has no _value.
+
     bool_cols = [
         "v1_uncommitted_in_dev", "v2_promoted_while_dirty",
-        "v3_modified_after_commit", "v4_direct_edit_test", "v4_direct_edit_prod",
-        "is_uncommitted", "pending_promotion",
+        "v3_modified_after_commit", "v4_direct_edit_test",
+        "v4_direct_edit_prod", "is_uncommitted", "pending_promotion",
     ]
     for col in bool_cols:
         df[col] = df[col].fillna(False).astype(bool)
-    
+
+    # ── 8. Composite violation flag ──────────────────────────────────────────
+
     df["is_violation"] = (
         df["v1_uncommitted_in_dev"]    |
         df["v2_promoted_while_dirty"]  |
@@ -948,16 +989,16 @@ def detect_violations(df_git:        pd.DataFrame,
         df["v4_direct_edit_prod"]
     )
 
-    # ── 8. Severity ──────────────────────────────────────────────────────────
+    # ── 9. Severity ──────────────────────────────────────────────────────────
 
     def severity(row) -> str:
         if row["v4_direct_edit_prod"]:
             return "CRITICAL"
         score = (
-            int(bool(row["v1_uncommitted_in_dev"]))    * 1 +
-            int(bool(row["v2_promoted_while_dirty"]))  * 2 +
-            int(bool(row["v3_modified_after_commit"])) * 1 +
-            int(bool(row["v4_direct_edit_test"]))      * 2
+            int(row["v1_uncommitted_in_dev"])    * 1 +
+            int(row["v2_promoted_while_dirty"])  * 2 +
+            int(row["v3_modified_after_commit"]) * 1 +
+            int(row["v4_direct_edit_test"])      * 2
         )
         if   score >= 4: return "HIGH"
         elif score >= 2: return "MEDIUM"
@@ -966,13 +1007,12 @@ def detect_violations(df_git:        pd.DataFrame,
 
     df["severity"] = df.apply(severity, axis=1)
 
-    # ── 9. Drift hours ───────────────────────────────────────────────────────
-    # Requires last_modified_at — currently NULL. Placeholder for future use.
+    # ── 10. Drift hours ──────────────────────────────────────────────────────
     df["drift_hours"] = None
 
     df["scan_timestamp"] = scan_time
 
-    # ── 10. Summary ──────────────────────────────────────────────────────────
+    # ── 11. Summary ──────────────────────────────────────────────────────────
     total_v    = int(df["is_violation"].sum())
     critical_v = int((df["severity"] == "CRITICAL").sum())
     high_v     = int((df["severity"] == "HIGH").sum())
@@ -987,8 +1027,11 @@ def detect_violations(df_git:        pd.DataFrame,
     return df
 
 
-# CORRECT:
-df_git_status["last_modified_at"] = pd.to_datetime(df_git_status["last_modified_at"], utc=True, errors="coerce")
+# ── Run ───────────────────────────────────────────────────────────────────────
+
+df_git_status["last_modified_at"] = pd.to_datetime(
+    df_git_status["last_modified_at"], utc=True, errors="coerce"
+)
 
 df_violations = detect_violations(
     df_git_status,
@@ -997,7 +1040,7 @@ df_violations = detect_violations(
     df_ado_commits
 )
 
-# Preview
+# Preview violations only
 cols_preview = [
     "item_display_name", "item_type", "severity",
     "v1_uncommitted_in_dev", "v2_promoted_while_dirty",
@@ -1005,7 +1048,6 @@ cols_preview = [
     "pending_promotion", "v4_note"
 ]
 display(df_violations[df_violations["is_violation"]][cols_preview])
-
 
 # -----------------------------------------------------------------------------
 # CELL 9 — SQL connection and DDL
