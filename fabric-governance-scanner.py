@@ -609,11 +609,14 @@ df_deployments["created_at"]  = pd.to_datetime(df_deployments["created_at"], utc
 df_deployments["completed_at"] = pd.to_datetime(df_deployments["completed_at"], utc=True, errors="coerce")
 
 if not df_deployments.empty:
-    display(df_deployments[[
+    display_df = df_deployments[[
         "item_display_name", "item_type", "source_stage",
         "target_stage", "triggered_by", "created_at",
         "operation_status", "item_deploy_status", "pre_deployment_state"
-    ]].head(20))
+    ]].copy()
+    display_df["created_at"]  = display_df["created_at"].dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    display_df["completed_at"] = display_df["completed_at"].dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    display(display_df.head(20))
 else:
     print("No deployment data returned — check warnings above.")
 
