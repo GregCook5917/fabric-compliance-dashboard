@@ -34,22 +34,15 @@ print("First item structure:")
 print(json.dumps(items[0], indent=2, default=str))
 
 # DIAGNOSTIC — Cell 6 raw response
-import json
-
-raw_ops = fabric_get(
-    f"deploymentPipelines/{CONFIG['deployment_pipeline_id']}/operations"
+# DIAGNOSTIC — inspect first step's sourceAndTarget fields
+op_id     = df_deployments["operation_id"].iloc[0]
+op_detail = fabric_get(
+    f"deploymentPipelines/{CONFIG['deployment_pipeline_id']}/operations/{op_id}"
 )
-
-print("Top-level keys:", list(raw_ops.keys()))
-print("Total operations:", len(raw_ops.get("value", [])))
-print()
-
-# Show first operation in full if any exist
-ops = raw_ops.get("value", [])
-if ops:
-    print("First operation structure:")
-    print(json.dumps(ops[0], indent=2, default=str))
-else:
-    print("No operations returned — checking alternate keys...")
-    for k, v in raw_ops.items():
-        print(f"  {k}: {type(v).__name__} = {repr(v)[:200]}")
+steps = op_detail.get("executionPlan", {}).get("steps", [])
+if steps:
+    sat = steps[0].get("sourceAndTarget", {})
+    print("sourceAndTarget keys:", list(sat.keys()))
+    print("sourceAndTarget values:")
+    for k, v in sat.items():
+        print(f"  '{k}': {v}")
