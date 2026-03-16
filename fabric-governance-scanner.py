@@ -929,7 +929,17 @@ def detect_violations(df_git:        pd.DataFrame,
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
 
     # ── 7. Composite violation flag ──────────────────────────────────────────
-
+    
+    # Coerce all boolean flag columns to bool — pd.concat appended rows
+    # may contain None instead of False which breaks the | operator
+    bool_cols = [
+        "v1_uncommitted_in_dev", "v2_promoted_while_dirty",
+        "v3_modified_after_commit", "v4_direct_edit_test", "v4_direct_edit_prod",
+        "is_uncommitted", "pending_promotion",
+    ]
+    for col in bool_cols:
+        df[col] = df[col].fillna(False).astype(bool)
+    
     df["is_violation"] = (
         df["v1_uncommitted_in_dev"]    |
         df["v2_promoted_while_dirty"]  |
