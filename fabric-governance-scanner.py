@@ -605,10 +605,6 @@ def get_deployment_operations() -> pd.DataFrame:
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 df_deployments = get_deployment_operations()
-print("Shape:", df_deployments.shape)
-print("Columns:", list(df_deployments.columns))
-print("completed_at dtype:", df_deployments["completed_at"].dtype)
-print("completed_at sample:", df_deployments["completed_at"].iloc[0])
 df_deployments["created_at"]  = pd.to_datetime(df_deployments["created_at"], utc=True, errors="coerce")
 df_deployments["completed_at"] = pd.to_datetime(df_deployments["completed_at"], utc=True, errors="coerce")
 
@@ -619,7 +615,6 @@ if not df_deployments.empty:
         "operation_status", "item_deploy_status", "pre_deployment_state"
     ]].copy()
     display_df["created_at"]  = display_df["created_at"].astype(str).str.replace(r"\.\d+\+.*", " UTC", regex=True)
-    display_df["completed_at"] = display_df["completed_at"].astype(str).str.replace(r"\.\d+\+.*", " UTC", regex=True)
     display(display_df.head(20))
 else:
     print("No deployment data returned — check warnings above.")
