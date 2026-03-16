@@ -618,12 +618,8 @@ if not df_deployments.empty:
         "target_stage", "triggered_by", "created_at",
         "operation_status", "item_deploy_status", "pre_deployment_state"
     ]].copy()
-display_df["created_at"] = display_df["created_at"].apply(
-    lambda x: x.strftime("%Y-%m-%d %H:%M:%S UTC") if pd.notna(x) and hasattr(x, "strftime") else str(x) if pd.notna(x) else ""
-)
-display_df["completed_at"] = display_df["completed_at"].apply(
-    lambda x: x.strftime("%Y-%m-%d %H:%M:%S UTC") if pd.notna(x) and hasattr(x, "strftime") else str(x) if pd.notna(x) else ""
-)
+    display_df["created_at"]  = display_df["created_at"].astype(str).str.replace(r"\.\d+\+.*", " UTC", regex=True)
+    display_df["completed_at"] = display_df["completed_at"].astype(str).str.replace(r"\.\d+\+.*", " UTC", regex=True)
     display(display_df.head(20))
 else:
     print("No deployment data returned — check warnings above.")
