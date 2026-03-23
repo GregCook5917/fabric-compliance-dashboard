@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/report/1.0.0/schema.json",
+  "themeCollection": {
+    "baseTheme": {
+      "name": "CY24SU06",
+      "version": "5.57",
+      "type": "SharedResources"
+    }
+  },
+  "datasetReference": {
+    "byPath": {
+      "path": "../../FabricCompliance.SemanticModel"
+    }
+  },
+  "theme": {
+    "dataColors": [
+      "#E24B4A",
+      "#EF9F27",
+      "#7F77DD",
+      "#1D9E75",
+      "#378ADD",
+      "#639922",
+      "#D85A30",
+      "#534AB7"
+    ],
+    "background": "#F4F3EE",
+    "foreground": "#1A1A2E",
+    "tableAccent": "#7F77DD"
+  }
+}

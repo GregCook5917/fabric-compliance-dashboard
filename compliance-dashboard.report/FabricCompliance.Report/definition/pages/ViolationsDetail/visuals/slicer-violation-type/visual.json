@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "slicer-violation-type",
+  "position": { "x": 20, "y": 60, "z": 0, "width": 220, "height": 200, "tabOrder": 100 },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "violation_type" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Violation Type" },
+    "objects": {
+      "general": [{ "properties": { "orientation": "Vertical" } }],
+      "selection": [{ "properties": { "selectAllCheckboxEnabled": true, "singleSelect": false } }],
+      "header": [{ "properties": { "show": true, "fontColor": { "solid": { "color": "#888780" } }, "fontSize": 10 } }]
+    }
+  }
+}

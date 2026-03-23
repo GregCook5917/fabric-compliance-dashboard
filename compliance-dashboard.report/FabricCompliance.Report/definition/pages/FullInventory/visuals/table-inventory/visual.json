@@ -1,0 +1,338 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "table-inventory",
+  "position": {
+    "x": 20,
+    "y": 215,
+    "z": 0,
+    "width": 840,
+    "height": 490,
+    "tabOrder": 300
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "triplet_name"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "workspace"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "object_name"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "object_type"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "sync_state"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "exists_in_dev"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "exists_in_test"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "exists_in_prod"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "exists_in_git"
+                }
+              }
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "last_modified"
+                }
+              }
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measures"
+                    }
+                  },
+                  "Property": "Violation Flag"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "inventory"
+                  }
+                },
+                "Property": "triplet_name"
+              }
+            },
+            "direction": "Ascending"
+          }
+        ]
+      }
+    },
+    "title": {
+      "show": true,
+      "text": "Object Inventory \u2014 all workspaces"
+    },
+    "objects": {
+      "grid": [
+        {
+          "properties": {
+            "rowPadding": 6,
+            "outlineColor": {
+              "solid": {
+                "color": "#E0DFD8"
+              }
+            },
+            "gridHorizontalColor": {
+              "solid": {
+                "color": "#E0DFD8"
+              }
+            }
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {
+            "fontColor": {
+              "solid": {
+                "color": "#888780"
+              }
+            },
+            "fontSize": 10,
+            "backColor": {
+              "solid": {
+                "color": "#F4F3EE"
+              }
+            }
+          }
+        }
+      ],
+      "values": [
+        {
+          "properties": {
+            "fontColorPrimary": {
+              "solid": {
+                "color": "#1A1A2E"
+              }
+            },
+            "backColorPrimary": {
+              "solid": {
+                "color": "#FFFFFF"
+              }
+            },
+            "backColorSecondary": {
+              "solid": {
+                "color": "#F9F8F5"
+              }
+            },
+            "fontSize": 11
+          }
+        }
+      ]
+    },
+    "conditionalFormatting": [
+      {
+        "role": "sync_state",
+        "rules": [
+          {
+            "operator": "Equals",
+            "value": "Synced",
+            "formattingOptions": {
+              "fontColor": {
+                "solid": {
+                  "color": "#0F6E56"
+                }
+              }
+            }
+          },
+          {
+            "operator": "Equals",
+            "value": "Unsynced",
+            "formattingOptions": {
+              "fontColor": {
+                "solid": {
+                  "color": "#A32D2D"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "Violation Flag",
+        "rules": [
+          {
+            "operator": "Equals",
+            "value": "Clean",
+            "formattingOptions": {
+              "backgroundFill": {
+                "solid": {
+                  "color": "#E1F5EE"
+                }
+              },
+              "fontColor": {
+                "solid": {
+                  "color": "#0F6E56"
+                }
+              }
+            }
+          },
+          {
+            "operator": "NotEquals",
+            "value": "Clean",
+            "formattingOptions": {
+              "backgroundFill": {
+                "solid": {
+                  "color": "#FCEBEB"
+                }
+              },
+              "fontColor": {
+                "solid": {
+                  "color": "#A32D2D"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "role": "workspace",
+        "rules": [
+          {
+            "operator": "Equals",
+            "value": "Dev",
+            "formattingOptions": {
+              "backgroundFill": {
+                "solid": {
+                  "color": "#E6F1FB"
+                }
+              }
+            }
+          },
+          {
+            "operator": "Equals",
+            "value": "Test",
+            "formattingOptions": {
+              "backgroundFill": {
+                "solid": {
+                  "color": "#FAEEDA"
+                }
+              }
+            }
+          },
+          {
+            "operator": "Equals",
+            "value": "Prod",
+            "formattingOptions": {
+              "backgroundFill": {
+                "solid": {
+                  "color": "#FCEBEB"
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

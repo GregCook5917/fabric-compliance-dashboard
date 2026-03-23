@@ -1,0 +1,59 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "table-violations",
+  "position": { "x": 260, "y": 120, "z": 0, "width": 1000, "height": 580, "tabOrder": 500 },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "triplet_name" } } },
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "workspace" } } },
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "object_name" } } },
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "object_type" } } },
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "violation_type" } } },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Exists In Dev" } } },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Exists In Git" } } },
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "sync_state" } } }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "triplet_name" } }, "direction": "Ascending" }]
+      }
+    },
+    "title": { "show": true, "text": "Violation Records — click any row to drill through to full inventory" },
+    "drillthrough": { "enabled": true, "target": "FullInventory" },
+    "objects": {
+      "grid": [{ "properties": { "rowPadding": 8, "outlineColor": { "solid": { "color": "#E0DFD8" } }, "gridHorizontalColor": { "solid": { "color": "#E0DFD8" } } } }],
+      "columnHeaders": [{ "properties": { "fontColor": { "solid": { "color": "#888780" } }, "fontSize": 10, "backColor": { "solid": { "color": "#F4F3EE" } } } }],
+      "values": [{ "properties": { "fontColorPrimary": { "solid": { "color": "#1A1A2E" } }, "backColorPrimary": { "solid": { "color": "#FFFFFF" } }, "backColorSecondary": { "solid": { "color": "#F9F8F5" } }, "fontSize": 11 } }]
+    },
+    "conditionalFormatting": [
+      {
+        "role": "violation_type",
+        "rules": [
+          { "operator": "Equals", "value": "UNSYNCED", "formattingOptions": { "backgroundFill": { "solid": { "color": "#FCEBEB" } }, "fontColor": { "solid": { "color": "#A32D2D" } } } },
+          { "operator": "Equals", "value": "ORPHANED_OBJECT", "formattingOptions": { "backgroundFill": { "solid": { "color": "#FAEEDA" } }, "fontColor": { "solid": { "color": "#854F0B" } } } },
+          { "operator": "Equals", "value": "UNCOMMITTED_PROMOTION", "formattingOptions": { "backgroundFill": { "solid": { "color": "#EEEDFE" } }, "fontColor": { "solid": { "color": "#3C3489" } } } }
+        ]
+      },
+      {
+        "role": "workspace",
+        "rules": [
+          { "operator": "Equals", "value": "Dev",  "formattingOptions": { "backgroundFill": { "solid": { "color": "#E6F1FB" } } } },
+          { "operator": "Equals", "value": "Test", "formattingOptions": { "backgroundFill": { "solid": { "color": "#FAEEDA" } } } },
+          { "operator": "Equals", "value": "Prod", "formattingOptions": { "backgroundFill": { "solid": { "color": "#FCEBEB" } } } }
+        ]
+      },
+      {
+        "role": "sync_state",
+        "rules": [
+          { "operator": "Equals", "value": "Synced",   "formattingOptions": { "fontColor": { "solid": { "color": "#0F6E56" } } } },
+          { "operator": "Equals", "value": "Unsynced", "formattingOptions": { "fontColor": { "solid": { "color": "#A32D2D" } } } }
+        ]
+      }
+    ]
+  }
+}

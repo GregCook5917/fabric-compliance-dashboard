@@ -1,0 +1,91 @@
+table inventory
+	lineageTag: 00000002-0000-0000-0000-000000000001
+
+	column triplet_name
+		dataType: string
+		lineageTag: 00000002-0001-0000-0000-000000000001
+		sourceColumn: triplet_name
+		summarizeBy: none
+
+	column workspace
+		dataType: string
+		lineageTag: 00000002-0002-0000-0000-000000000001
+		sourceColumn: workspace
+		summarizeBy: none
+
+	column object_type
+		dataType: string
+		lineageTag: 00000002-0003-0000-0000-000000000001
+		sourceColumn: object_type
+		summarizeBy: none
+
+	column object_name
+		dataType: string
+		lineageTag: 00000002-0004-0000-0000-000000000001
+		sourceColumn: object_name
+		summarizeBy: none
+
+	column sync_state
+		dataType: string
+		lineageTag: 00000002-0005-0000-0000-000000000001
+		sourceColumn: sync_state
+		summarizeBy: none
+
+	column exists_in_dev
+		dataType: boolean
+		formatString: """✓"";""✓"";""✗"""
+		lineageTag: 00000002-0006-0000-0000-000000000001
+		sourceColumn: exists_in_dev
+		summarizeBy: none
+
+	column exists_in_test
+		dataType: boolean
+		formatString: """✓"";""✓"";""✗"""
+		lineageTag: 00000002-0007-0000-0000-000000000001
+		sourceColumn: exists_in_test
+		summarizeBy: none
+
+	column exists_in_prod
+		dataType: boolean
+		formatString: """✓"";""✓"";""✗"""
+		lineageTag: 00000002-0008-0000-0000-000000000001
+		sourceColumn: exists_in_prod
+		summarizeBy: none
+
+	column exists_in_git
+		dataType: boolean
+		formatString: """✓"";""✓"";""✗"""
+		lineageTag: 00000002-0009-0000-0000-000000000001
+		sourceColumn: exists_in_git
+		summarizeBy: none
+
+	column last_modified
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 00000002-0010-0000-0000-000000000001
+		sourceColumn: last_modified
+		summarizeBy: none
+
+	column has_violation
+		dataType: string
+		lineageTag: 00000002-0011-0000-0000-000000000001
+		summarizeBy: none
+		expression =
+			IF(
+			    CALCULATE(
+			        COUNTROWS(violations),
+			        violations[object_name] = inventory[object_name]
+			            && violations[triplet_name] = inventory[triplet_name]
+			    ) > 0,
+			    "Yes",
+			    "No"
+			)
+
+	partition inventory-partition = m
+		mode: import
+		source =
+			let
+			    Source = Parquet.Document(File.Contents("inventory.parquet"))
+			in
+			    Source
+

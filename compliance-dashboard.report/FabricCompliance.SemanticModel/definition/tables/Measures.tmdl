@@ -1,0 +1,210 @@
+table Measures
+	lineageTag: 00000003-0000-0000-0000-000000000001
+
+	/// Placeholder column required for a measures-only table
+	column _placeholder
+		dataType: int64
+		isHidden
+		lineageTag: 00000003-0001-0000-0000-000000000001
+		expression: 0
+		summarizeBy: none
+
+	/// Total count of all violation records
+	measure 'Total Violations' = COUNTROWS(violations)
+		displayFolder: Summary
+		formatString: "#,0"
+		lineageTag: 00000003-1001-0000-0000-000000000001
+
+	/// Total count of all inventory records
+	measure 'Total Objects' = COUNTROWS(inventory)
+		displayFolder: Summary
+		formatString: "#,0"
+		lineageTag: 00000003-1002-0000-0000-000000000001
+
+	/// Count of inventory objects present in Dev workspace
+	measure 'Objects In Dev' =
+			CALCULATE(
+			    COUNTROWS(inventory),
+			    inventory[exists_in_dev] = TRUE()
+			)
+		displayFolder: Summary
+		formatString: "#,0"
+		lineageTag: 00000003-1003-0000-0000-000000000001
+
+	/// Count of inventory objects backed by git
+	measure 'Git Backed Count' =
+			CALCULATE(
+			    COUNTROWS(inventory),
+			    inventory[exists_in_git] = TRUE()
+			)
+		displayFolder: Summary
+		formatString: "#,0"
+		lineageTag: 00000003-1004-0000-0000-000000000001
+
+	/// Objects synced and present across all three environments
+	measure 'Fully Synced Count' =
+			CALCULATE(
+			    COUNTROWS(inventory),
+			    inventory[sync_state] = "Synced",
+			    inventory[exists_in_dev] = TRUE(),
+			    inventory[exists_in_test] = TRUE(),
+			    inventory[exists_in_prod] = TRUE()
+			)
+		displayFolder: Summary
+		formatString: "#,0"
+		lineageTag: 00000003-1005-0000-0000-000000000001
+
+	/// Orphaned objects found in Test or Prod with no Dev or git presence
+	measure 'Critical Orphans' =
+			CALCULATE(
+			    COUNTROWS(violations),
+			    violations[violation_type] = "ORPHANED_OBJECT",
+			    violations[workspace] IN { "Test", "Prod" }
+			)
+		displayFolder: Summary
+		formatString: "#,0"
+		lineageTag: 00000003-1006-0000-0000-000000000001
+
+	/// Percentage of inventory objects with no corresponding violation
+	measure 'Compliance Rate' =
+			VAR _total = [Total Objects]
+			VAR _violations = [Total Violations]
+			RETURN
+			    IF(
+			        _total = 0,
+			        BLANK(),
+			        DIVIDE(_total - _violations, _total) * 100
+			    )
+		displayFolder: Summary
+		formatString: "0.0\%"
+		lineageTag: 00000003-1007-0000-0000-000000000001
+
+	/// Compliance rate calculated in the context of the current workspace filter
+	measure 'Workspace Compliance Rate' =
+			VAR _wsTotal = COUNTROWS(inventory)
+			VAR _wsViolations =
+			    CALCULATE(
+			        COUNTROWS(violations),
+			        TREATAS(VALUES(inventory[workspace]), violations[workspace])
+			    )
+			RETURN
+			    IF(
+			        _wsTotal = 0,
+			        BLANK(),
+			        DIVIDE(_wsTotal - _wsViolations, _wsTotal) * 100
+			    )
+		displayFolder: Workspace
+		formatString: "0.0\%"
+		lineageTag: 00000003-1008-0000-0000-000000000001
+
+	/// The single most frequent violation type for the current filter context
+	measure 'Top Violation Type' =
+			CALCULATE(
+			    FIRSTNONBLANK(violations[violation_type], 1),
+			    TOPN(
+			        1,
+			        SUMMARIZE(violations, violations[violation_type], "_cnt", COUNTROWS(violations)),
+			        [_cnt],
+			        DESC
+			    )
+			)
+		displayFolder: Summary
+		lineageTag: 00000003-1009-0000-0000-000000000001
+
+	/// Check mark indicator — does this violation's object exist in Dev?
+	measure 'Exists In Dev' =
+			VAR _name = SELECTEDVALUE(violations[object_name])
+			VAR _trip = SELECTEDVALUE(violations[triplet_name])
+			RETURN
+			    IF(
+			        CALCULATE(
+			            COUNTROWS(inventory),
+			            inventory[object_name] = _name,
+			            inventory[triplet_name] = _trip,
+			            inventory[exists_in_dev] = TRUE()
+			        ) > 0,
+			        "✓",
+			        "✗"
+			    )
+		displayFolder: Violations
+		lineageTag: 00000003-1010-0000-0000-000000000001
+
+	/// Check mark indicator — does this violation's object exist in git?
+	measure 'Exists In Git' =
+			VAR _name = SELECTEDVALUE(violations[object_name])
+			VAR _trip = SELECTEDVALUE(violations[triplet_name])
+			RETURN
+			    IF(
+			        CALCULATE(
+			            COUNTROWS(inventory),
+			            inventory[object_name] = _name,
+			            inventory[triplet_name] = _trip,
+			            inventory[exists_in_git] = TRUE()
+			        ) > 0,
+			        "✓",
+			        "✗"
+			    )
+		displayFolder: Violations
+		lineageTag: 00000003-1011-0000-0000-000000000001
+
+	/// Returns the violation type for this inventory row, or "Clean" if none
+	measure 'Violation Flag' =
+			VAR _name = SELECTEDVALUE(inventory[object_name])
+			VAR _trip = SELECTEDVALUE(inventory[triplet_name])
+			VAR _vcount =
+			    CALCULATE(
+			        COUNTROWS(violations),
+			        violations[object_name] = _name,
+			        violations[triplet_name] = _trip
+			    )
+			RETURN
+			    IF(
+			        _vcount > 0,
+			        CALCULATE(
+			            FIRSTNONBLANK(violations[violation_type], 1),
+			            violations[object_name] = _name,
+			            violations[triplet_name] = _trip
+			        ),
+			        "Clean"
+			    )
+		displayFolder: Inventory
+		lineageTag: 00000003-1012-0000-0000-000000000001
+
+	/// Row count of inventory in current filter context
+	measure 'Object Count' = COUNTROWS(inventory)
+		displayFolder: Inventory
+		formatString: "#,0"
+		lineageTag: 00000003-1013-0000-0000-000000000001
+
+	/// Percentage of Dev objects that are present in Test
+	measure 'Test Coverage Pct' =
+			VAR _devCount =
+			    CALCULATE(COUNTROWS(inventory), inventory[exists_in_dev] = TRUE())
+			VAR _testCount =
+			    CALCULATE(COUNTROWS(inventory), inventory[exists_in_test] = TRUE())
+			RETURN
+			    DIVIDE(_testCount, _devCount) * 100
+		displayFolder: Coverage
+		formatString: "0\%"
+		lineageTag: 00000003-1014-0000-0000-000000000001
+
+	/// Percentage of Dev objects that are present in Prod
+	measure 'Prod Coverage Pct' =
+			VAR _devCount =
+			    CALCULATE(COUNTROWS(inventory), inventory[exists_in_dev] = TRUE())
+			VAR _prodCount =
+			    CALCULATE(COUNTROWS(inventory), inventory[exists_in_prod] = TRUE())
+			RETURN
+			    DIVIDE(_prodCount, _devCount) * 100
+		displayFolder: Coverage
+		formatString: "0\%"
+		lineageTag: 00000003-1015-0000-0000-000000000001
+
+	partition Measures-partition = m
+		mode: import
+		source =
+			let
+			    Source = #table({"_placeholder"}, {{0}})
+			in
+			    Source
+

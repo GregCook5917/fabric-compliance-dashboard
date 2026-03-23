@@ -1,0 +1,66 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "kpi-fully-synced",
+  "position": {
+    "x": 755,
+    "y": 60,
+    "z": 0,
+    "width": 225,
+    "height": 80,
+    "tabOrder": 100
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measures"
+                    }
+                  },
+                  "Property": "Fully Synced Count"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "title": {
+      "show": true,
+      "text": "Fully Synced Count"
+    },
+    "objects": {
+      "labels": [
+        {
+          "properties": {
+            "color": {
+              "solid": {
+                "color": "#0F6E56"
+              }
+            },
+            "fontSize": 24
+          }
+        }
+      ],
+      "categoryLabels": [
+        {
+          "properties": {
+            "show": true,
+            "color": {
+              "solid": {
+                "color": "#888780"
+              }
+            },
+            "fontSize": 10
+          }
+        }
+      ]
+    }
+  }
+}

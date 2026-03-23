@@ -1,0 +1,8 @@
+relationship violations_to_inventory
+	fromTable: violations
+	fromColumn: object_name
+	toTable: inventory
+	toColumn: object_name
+	crossFilteringBehavior: oneDirection
+	lineageTag: 00000010-0001-0000-0000-000000000001
+

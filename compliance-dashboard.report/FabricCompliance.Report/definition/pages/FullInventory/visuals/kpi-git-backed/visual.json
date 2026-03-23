@@ -1,0 +1,66 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "kpi-git-backed",
+  "position": {
+    "x": 510,
+    "y": 60,
+    "z": 0,
+    "width": 225,
+    "height": 80,
+    "tabOrder": 100
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measures"
+                    }
+                  },
+                  "Property": "Git Backed Count"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "title": {
+      "show": true,
+      "text": "Git Backed Count"
+    },
+    "objects": {
+      "labels": [
+        {
+          "properties": {
+            "color": {
+              "solid": {
+                "color": "#1A1A2E"
+              }
+            },
+            "fontSize": 24
+          }
+        }
+      ],
+      "categoryLabels": [
+        {
+          "properties": {
+            "show": true,
+            "color": {
+              "solid": {
+                "color": "#888780"
+              }
+            },
+            "fontSize": 10
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "donut-violation-dist",
+  "position": { "x": 630, "y": 165, "z": 0, "width": 310, "height": 240, "tabOrder": 600 },
+  "visual": {
+    "visualType": "donutChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "violation_type" } } }]
+        },
+        "Y": {
+          "projections": [{ "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Total Violations" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Violation Distribution" },
+    "objects": {
+      "legend": [{ "properties": { "show": true, "position": "Right", "fontSize": 10 } }]
+    }
+  }
+}

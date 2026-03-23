@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "slicer-workspace",
+  "position": { "x": 260, "y": 60, "z": 0, "width": 1000, "height": 50, "tabOrder": 400 },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "workspace" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Workspace" },
+    "objects": {
+      "general": [{ "properties": { "orientation": "Horizontal" } }],
+      "selection": [{ "properties": { "selectAllCheckboxEnabled": true, "singleSelect": false } }],
+      "header": [{ "properties": { "show": true, "fontColor": { "solid": { "color": "#888780" } }, "fontSize": 10 } }]
+    }
+  }
+}

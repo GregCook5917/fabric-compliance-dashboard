@@ -1,0 +1,19 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "kpi-critical",
+  "position": { "x": 950, "y": 60, "z": 0, "width": 310, "height": 90, "tabOrder": 400 },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [{ "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Critical Orphans" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Critical (Orphans)" },
+    "objects": {
+      "labels": [{ "properties": { "color": { "solid": { "color": "#D85A30" } }, "fontSize": 28 } }]
+    }
+  }
+}

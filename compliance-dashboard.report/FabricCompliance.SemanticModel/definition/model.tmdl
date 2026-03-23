@@ -1,0 +1,7 @@
+model FabricCompliance
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+
+	annotation PBIDesktopVersion = 2.130.0.0
+

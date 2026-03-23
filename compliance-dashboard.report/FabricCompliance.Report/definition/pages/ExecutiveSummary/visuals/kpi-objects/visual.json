@@ -1,0 +1,19 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "kpi-objects",
+  "position": { "x": 640, "y": 60, "z": 0, "width": 290, "height": 90, "tabOrder": 300 },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [{ "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Total Objects" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Objects Monitored" },
+    "objects": {
+      "labels": [{ "properties": { "color": { "solid": { "color": "#1A1A2E" } }, "fontSize": 28 } }]
+    }
+  }
+}

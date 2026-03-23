@@ -1,0 +1,69 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "slicer-violations-only",
+  "position": {
+    "x": 680,
+    "y": 155,
+    "z": 0,
+    "width": 160,
+    "height": 50,
+    "tabOrder": 200
+  },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "has_violation"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "title": {
+      "show": true,
+      "text": "Violations Only"
+    },
+    "objects": {
+      "general": [
+        {
+          "properties": {
+            "orientation": "Horizontal"
+          }
+        }
+      ],
+      "selection": [
+        {
+          "properties": {
+            "selectAllCheckboxEnabled": true,
+            "singleSelect": false
+          }
+        }
+      ],
+      "header": [
+        {
+          "properties": {
+            "show": true,
+            "fontColor": {
+              "solid": {
+                "color": "#888780"
+              }
+            },
+            "fontSize": 10
+          }
+        }
+      ]
+    }
+  }
+}

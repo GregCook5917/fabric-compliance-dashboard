@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "table-triplet-health",
+  "position": { "x": 670, "y": 420, "z": 0, "width": 590, "height": 280, "tabOrder": 900 },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            { "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "triplet_name" } } },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Total Violations" } } },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Top Violation Type" } } },
+            { "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Compliance Rate" } } }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [{ "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Total Violations" } }, "direction": "Descending" }]
+      }
+    },
+    "title": { "show": true, "text": "Triplet Health at a Glance" },
+    "objects": {
+      "grid": [{ "properties": { "rowPadding": 8, "outlineColor": { "solid": { "color": "#E0DFD8" } } } }],
+      "columnHeaders": [{ "properties": { "fontColor": { "solid": { "color": "#888780" } }, "fontSize": 10, "backColor": { "solid": { "color": "#F4F3EE" } } } }]
+    },
+    "conditionalFormatting": [
+      {
+        "role": "Compliance Rate",
+        "gradient": {
+          "minimum": { "value": 0, "color": "#FCEBEB" },
+          "middle": { "value": 75, "color": "#FAEEDA" },
+          "maximum": { "value": 100, "color": "#E1F5EE" }
+        }
+      }
+    ]
+  }
+}

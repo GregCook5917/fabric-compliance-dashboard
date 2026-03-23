@@ -1,0 +1,14 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/1.0.0/schema.json",
+  "name": "ExecutiveSummary",
+  "displayName": "Executive Summary",
+  "ordinal": 0,
+  "displayOption": "FitToPage",
+  "width": 1280,
+  "height": 720,
+  "background": {
+    "color": { "value": "#F4F3EE" },
+    "transparency": 0
+  },
+  "visualContainerCount": 9
+}

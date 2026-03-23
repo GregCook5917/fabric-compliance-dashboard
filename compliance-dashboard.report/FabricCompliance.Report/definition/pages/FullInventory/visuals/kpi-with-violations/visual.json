@@ -1,0 +1,66 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "kpi-with-violations",
+  "position": {
+    "x": 1000,
+    "y": 60,
+    "z": 0,
+    "width": 225,
+    "height": 80,
+    "tabOrder": 100
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measures"
+                    }
+                  },
+                  "Property": "Total Violations"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "title": {
+      "show": true,
+      "text": "Total Violations"
+    },
+    "objects": {
+      "labels": [
+        {
+          "properties": {
+            "color": {
+              "solid": {
+                "color": "#A32D2D"
+              }
+            },
+            "fontSize": 24
+          }
+        }
+      ],
+      "categoryLabels": [
+        {
+          "properties": {
+            "show": true,
+            "color": {
+              "solid": {
+                "color": "#888780"
+              }
+            },
+            "fontSize": 10
+          }
+        }
+      ]
+    }
+  }
+}

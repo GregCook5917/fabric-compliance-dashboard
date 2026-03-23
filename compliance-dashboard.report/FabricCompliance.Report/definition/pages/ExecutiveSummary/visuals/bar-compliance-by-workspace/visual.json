@@ -1,0 +1,23 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "bar-compliance-by-workspace",
+  "position": { "x": 960, "y": 165, "z": 0, "width": 300, "height": 240, "tabOrder": 700 },
+  "visual": {
+    "visualType": "barChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "inventory" } }, "Property": "workspace" } } }]
+        },
+        "Y": {
+          "projections": [{ "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Workspace Compliance Rate" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Compliance by Workspace" },
+    "objects": {
+      "dataColors": [{ "properties": { "defaultColor": { "solid": { "color": "#1D9E75" } } } }],
+      "valueAxis": [{ "properties": { "start": 0, "end": 100 } }]
+    }
+  }
+}

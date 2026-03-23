@@ -1,0 +1,43 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "matrix-heatmap",
+  "position": { "x": 20, "y": 420, "z": 0, "width": 630, "height": 280, "tabOrder": 800 },
+  "visual": {
+    "visualType": "matrix",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "triplet_name" } } }]
+        },
+        "Columns": {
+          "projections": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "violation_type" } } }]
+        },
+        "Values": {
+          "projections": [{ "field": { "Measure": { "Expression": { "SourceRef": { "Entity": "Measures" } }, "Property": "Total Violations" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Violation Heatmap — Triplet by Type" },
+    "objects": {
+      "subTotals": [{ "properties": { "rowSubtotals": false, "columnSubtotals": false } }],
+      "grid": [{ "properties": {
+        "rowPadding": 6,
+        "gridVertical": true,
+        "gridHorizontal": true,
+        "outlineColor": { "solid": { "color": "#E0DFD8" } },
+        "gridVerticalColor": { "solid": { "color": "#E0DFD8" } },
+        "gridHorizontalColor": { "solid": { "color": "#E0DFD8" } }
+      }}]
+    },
+    "conditionalFormatting": [
+      {
+        "role": "Values",
+        "conditions": [
+          { "operator": "Equals", "value": 0, "formattingOptions": { "backgroundFill": { "solid": { "color": "#E1F5EE" } }, "fontColor": { "solid": { "color": "#0F6E56" } } } },
+          { "operator": "Between", "lowerBound": 1, "upperBound": 3, "formattingOptions": { "backgroundFill": { "solid": { "color": "#FAEEDA" } }, "fontColor": { "solid": { "color": "#854F0B" } } } },
+          { "operator": "GreaterThanOrEqualTo", "value": 4, "formattingOptions": { "backgroundFill": { "solid": { "color": "#FAECE7" } }, "fontColor": { "solid": { "color": "#A32D2D" } } } }
+        ]
+      }
+    ]
+  }
+}

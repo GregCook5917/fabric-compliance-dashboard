@@ -1,0 +1,22 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/1.0.0/schema.json",
+  "name": "FullInventory",
+  "displayName": "Full Inventory",
+  "ordinal": 2,
+  "displayOption": "FitToPage",
+  "width": 1280,
+  "height": 720,
+  "background": {
+    "color": { "value": "#F4F3EE" },
+    "transparency": 0
+  },
+  "drillthrough": {
+    "enabled": true,
+    "keepAllFilters": true,
+    "fields": [
+      { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "object_name" } },
+      { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "triplet_name" } }
+    ]
+  },
+  "visualContainerCount": 9
+}

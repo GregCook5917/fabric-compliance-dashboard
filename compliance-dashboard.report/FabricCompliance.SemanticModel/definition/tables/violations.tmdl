@@ -1,0 +1,54 @@
+table violations
+	lineageTag: 00000001-0000-0000-0000-000000000001
+
+	column triplet_name
+		dataType: string
+		lineageTag: 00000001-0001-0000-0000-000000000001
+		sourceColumn: triplet_name
+		summarizeBy: none
+
+	column workspace
+		dataType: string
+		lineageTag: 00000001-0002-0000-0000-000000000001
+		sourceColumn: workspace
+		summarizeBy: none
+
+	column object_type
+		dataType: string
+		lineageTag: 00000001-0003-0000-0000-000000000001
+		sourceColumn: object_type
+		summarizeBy: none
+
+	column object_name
+		dataType: string
+		lineageTag: 00000001-0004-0000-0000-000000000001
+		sourceColumn: object_name
+		summarizeBy: none
+
+	column violation_type
+		dataType: string
+		lineageTag: 00000001-0005-0000-0000-000000000001
+		sourceColumn: violation_type
+		summarizeBy: none
+
+	column sync_state
+		dataType: string
+		lineageTag: 00000001-0006-0000-0000-000000000001
+		sourceColumn: sync_state
+		summarizeBy: none
+
+	column detected_at
+		dataType: dateTime
+		formatString: Short Date
+		lineageTag: 00000001-0007-0000-0000-000000000001
+		sourceColumn: detected_at
+		summarizeBy: none
+
+	partition violations-partition = m
+		mode: import
+		source =
+			let
+			    Source = Parquet.Document(File.Contents("violations.parquet"))
+			in
+			    Source
+

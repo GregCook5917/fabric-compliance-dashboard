@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "slicer-object-type",
+  "position": { "x": 20, "y": 275, "z": 0, "width": 220, "height": 190, "tabOrder": 200 },
+  "visual": {
+    "visualType": "slicer",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [{ "field": { "Column": { "Expression": { "SourceRef": { "Entity": "violations" } }, "Property": "object_type" } } }]
+        }
+      }
+    },
+    "title": { "show": true, "text": "Object Type" },
+    "objects": {
+      "general": [{ "properties": { "orientation": "Vertical" } }],
+      "selection": [{ "properties": { "selectAllCheckboxEnabled": true, "singleSelect": false } }],
+      "header": [{ "properties": { "show": true, "fontColor": { "solid": { "color": "#888780" } }, "fontSize": 10 } }]
+    }
+  }
+}

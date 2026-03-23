@@ -1,0 +1,98 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/1.0.0/schema.json",
+  "name": "matrix-object-dist",
+  "position": {
+    "x": 880,
+    "y": 525,
+    "z": 0,
+    "width": 380,
+    "height": 180,
+    "tabOrder": 500
+  },
+  "visual": {
+    "visualType": "matrix",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "object_type"
+                }
+              }
+            }
+          ]
+        },
+        "Columns": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "inventory"
+                    }
+                  },
+                  "Property": "workspace"
+                }
+              }
+            }
+          ]
+        },
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Measures"
+                    }
+                  },
+                  "Property": "Object Count"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "title": {
+      "show": true,
+      "text": "Object Distribution by Type & Workspace"
+    },
+    "objects": {
+      "subTotals": [
+        {
+          "properties": {
+            "rowSubtotals": true,
+            "columnSubtotals": true
+          }
+        }
+      ],
+      "grid": [
+        {
+          "properties": {
+            "rowPadding": 5,
+            "gridHorizontalColor": {
+              "solid": {
+                "color": "#E0DFD8"
+              }
+            },
+            "gridVerticalColor": {
+              "solid": {
+                "color": "#E0DFD8"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
